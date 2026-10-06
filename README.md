@@ -4,9 +4,10 @@ Front **React 18 + TypeScript + Vite + Tailwind/shadcn** do sistema **Oliveira**
 do front legado (Lovable + Supabase) para a **migração gradual para a API própria**
 ([`oliveira-api`](../oliveira-api), Java 17 + Spring Boot).
 
-> **Status:** base importada. Estamos trocando os acessos **módulo a módulo**: em vez de
-> `supabase.from(...)`, o front passa a chamar nossa API (`/api/v1/...`). O primeiro módulo é
-> **Clientes** (menu + cadastro completo).
+> **Status:** base importada e **primeiro módulo migrado: Clientes** — login com token da nossa
+> API, listagem, cadastro completo, edição e exclusão (`/erp/clientes`). Os acessos vão sendo
+> trocados **módulo a módulo**: em vez de `supabase.from(...)`, a tela passa a chamar
+> `/api/v1/...` — as telas restantes continuam no Supabase.
 
 ---
 

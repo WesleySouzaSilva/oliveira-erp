@@ -7,7 +7,8 @@ import { componentTagger } from "lovable-tagger";
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
-    port: 8080,
+    // 5173 (padrão do Vite): a API ocupa 8080 — ver src/config/api.ts
+    port: 5173,
     hmr: {
       overlay: false,
     },

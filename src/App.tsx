@@ -11,6 +11,10 @@ import { AreaProvider } from "@/contexts/AreaContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { CeoRoute } from "@/components/CeoRoute";
 import { PortalRoute } from "@/components/portal/PortalRoute";
+// Módulos já migrados para a API própria (autenticam fora do Supabase — ver src/config/api.ts)
+const LayoutErp = lazyRetry(() => import("./components/erp/LayoutErp"));
+const EntrarApi = lazyRetry(() => import("./pages/erp/Entrar"));
+const ClientesApi = lazyRetry(() => import("./pages/erp/Clientes"));
 // Páginas de entrada também sob demanda: tiram as animações do pacote inicial
 const Auth = lazyRetry(() => import("./pages/Auth"));
 const PortalLogin = lazyRetry(() => import("./pages/PortalLogin"));
@@ -188,6 +192,8 @@ registrarRotas({
   "/novo-cliente": NovoCliente,
   "/clientes/fechamento": NovoClienteFechamento,
   "/clientes": Clientes,
+  "/erp/entrar": EntrarApi,
+  "/erp/clientes": ClientesApi,
   "/feed": Feed,
   "/rh": GestaoRH,
   "/comercial": GestaoComercial,
@@ -261,6 +267,12 @@ const App = () => (
             <Route path="/esqueci-senha" element={<EsqueciSenha />} />
             <Route path="/primeiro-acesso" element={<PrimeiroAcesso />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            {/* Módulos na API própria: login e menu próprios, sem Supabase */}
+            <Route path="/erp/entrar" element={<EntrarApi />} />
+            <Route path="/erp" element={<LayoutErp />}>
+              <Route index element={<Navigate to="/erp/clientes" replace />} />
+              <Route path="clientes" element={<ClientesApi />} />
+            </Route>
             <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
             {/* /gestao consolidado no Dashboard (bloco "Visão Gestor") — preserva bookmarks */}
             <Route path="/gestao" element={<Navigate to="/" replace />} />

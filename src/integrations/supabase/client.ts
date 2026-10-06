@@ -3,8 +3,16 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { brokeredPreviewStorage } from './previewAuthStorage';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+// ---------------------------------------------------------------------------
+// Ajuste da migração (oliveira-erp): enquanto os módulos vão para a API própria
+// (src/config/api.ts), este cliente só serve às telas ainda não migradas. Com os
+// placeholders abaixo o app sobe mesmo sem credenciais do Supabase — as telas
+// legadas falham ao buscar dados, mas não derrubam a aplicação.
+// Para usá-las de verdade, defina VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY no .env
+// (copie de .env.example).
+// ---------------------------------------------------------------------------
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? 'https://placeholder.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? 'placeholder';
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";

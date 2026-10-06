@@ -1,0 +1,398 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1789651629952,
+      "tag": "0000_distribuicao_automatica_fechamento",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789663148759,
+      "tag": "0001_onboarding_agro_checklist",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789674227212,
+      "tag": "0002_via_urgencia",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789694168892,
+      "tag": "0003_advbox_vinculo_por_regra",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789695020862,
+      "tag": "0004_clientes_cpf_origem_advbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789695451756,
+      "tag": "0005_advbox_decisoes_pares_pendentes",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789696166707,
+      "tag": "0006_advbox_fase_b_processos_criados",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789697742216,
+      "tag": "0007_garantias_avalistas_estrategia",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789737907836,
+      "tag": "0008_numero_operacao_invalido_cpf",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789754623148,
+      "tag": "0009_distribui_operacoes_sem_responsavel",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789756254970,
+      "tag": "0010_operacao_herda_responsavel_grupo",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789776957392,
+      "tag": "0011_acompanhamento_notificacoes_banco",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789780954019,
+      "tag": "0012_seguranca_politicas_acordos_arquivos_membros_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789781017183,
+      "tag": "0013_perfis_visibilidade_restrita",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789815669725,
+      "tag": "0014_feriados_calendario",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1789821310861,
+      "tag": "0015_escopo_banco_e_complementacoes",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1789868766374,
+      "tag": "0016_fila_vencidas_historico_duplicatas",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789919780920,
+      "tag": "0017_juizo_conferencia_vencidas",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789920480524,
+      "tag": "0018_juizo_marcacao_manual",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1789991801421,
+      "tag": "0019_onboarding_soft_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789996286129,
+      "tag": "0020_escopo_fechamento_e_disparo_advbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790017030746,
+      "tag": "0021_migracao_escopo_bancos_contratados",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1790018620591,
+      "tag": "0022_advbox_post_id_e_vinculo_operacoes",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790021203870,
+      "tag": "0023_restaura_duas_operacoes_odanir",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790021856098,
+      "tag": "0024_corrige_numeros_gravados_com_cpf",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790022408531,
+      "tag": "0025_restaura_duplicatas_sem_gemea",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790038072258,
+      "tag": "0026_encerramento_comunicado",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1790430110572,
+      "tag": "0027_controladoria_modulo",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1790431171288,
+      "tag": "0028_controladoria_cron_regiao_sp",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790431389779,
+      "tag": "0029_assinaturas_zapsign",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790432943600,
+      "tag": "0030_assinaturas_todos_setores",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790433362123,
+      "tag": "0031_controladoria_triagem_massa",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790433402495,
+      "tag": "0032_controladoria_prazo_trecho_fix",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790437736968,
+      "tag": "0033_djen_advbox_responsavel_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790438790213,
+      "tag": "0034_controladoria_advbox_usuarios",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790439557082,
+      "tag": "0035_treinamentos_modulo",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790439584594,
+      "tag": "0036_treinamentos_storage_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790439961643,
+      "tag": "0037_treinamentos_trilhas_select_colunas",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790440536375,
+      "tag": "0038_treinamentos_markdown_e_provas",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1790441645165,
+      "tag": "0039_perf_indices_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790441673686,
+      "tag": "0040_perf_rls_initplan",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790442298773,
+      "tag": "0041_tem_codigos_tribunais",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1790443073290,
+      "tag": "0042_ver_como_auditoria",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1790526197549,
+      "tag": "0043_advbox_base_historica",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1790526872235,
+      "tag": "0044_advbox_importar_funcoes",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1790526927910,
+      "tag": "0045_advbox_importar_clientes_ajuste",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1790526964880,
+      "tag": "0046_advbox_foto_clientes_antes",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1790527012603,
+      "tag": "0047_advbox_importar_where_true",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1790527087062,
+      "tag": "0048_advbox_importar_homonimos",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1790527132671,
+      "tag": "0049_advbox_importar_otimiza",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1790527273581,
+      "tag": "0050_advbox_sync_diario_cron",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1790537249415,
+      "tag": "0051_controladoria_datajud_radar",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1790537844908,
+      "tag": "0052_controladoria_datajud_cron",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1790538544629,
+      "tag": "0053_radar_cliente_autor",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1790539260094,
+      "tag": "0054_trein_papel_ve_menu",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1790541081452,
+      "tag": "0055_controladoria_captura_nome_sentinela_conferencia",
+      "breakpoints": true
+    }
+  ]
+}

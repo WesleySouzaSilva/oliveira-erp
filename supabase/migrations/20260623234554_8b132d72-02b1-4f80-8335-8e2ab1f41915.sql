@@ -1,0 +1,1 @@
+ALTER TABLE public.clientes DROP COLUMN IF EXISTS honorarios_valor;

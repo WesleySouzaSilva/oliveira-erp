@@ -1,0 +1,1 @@
+ALTER TABLE public.atendimentos_notas ADD COLUMN IF NOT EXISTS tipo_contato text;

@@ -1,0 +1,1 @@
+ALTER TABLE public.contratos_vencimentos ADD COLUMN IF NOT EXISTS primeiro_vencimento date;

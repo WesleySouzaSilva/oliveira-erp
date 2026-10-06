@@ -1,0 +1,1 @@
+ALTER TABLE public.analises_contratos ADD COLUMN IF NOT EXISTS comparativo_bacen jsonb;

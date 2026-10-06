@@ -1,0 +1,26 @@
+# ---- Dependências / build ----
+node_modules/
+dist/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# ---- Ambiente (nunca subir segredos; .env.example é versionado) ----
+.env
+.env.local
+.env.*.local
+
+# ---- Logs ----
+*.log
+logs/
+
+# ---- Testes ----
+playwright-report/
+test-results/
+
+# ---- Editor / SO ----
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*~

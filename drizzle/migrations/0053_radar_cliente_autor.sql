@@ -1,0 +1,1 @@
+ALTER TABLE public.controladoria_radar_resultados ADD COLUMN IF NOT EXISTS cliente_autor boolean NOT NULL DEFAULT false;

@@ -1,0 +1,154 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 33% 95%;
+    --foreground: 156 35% 17%;
+
+    --card: 40 30% 97%;
+    --card-foreground: 156 35% 17%;
+
+    --popover: 40 30% 97%;
+    --popover-foreground: 156 35% 17%;
+
+    --primary: 156 35% 17%;
+    --primary-foreground: 40 33% 95%;
+
+    --secondary: 40 20% 90%;
+    --secondary-foreground: 156 35% 17%;
+
+    --muted: 40 15% 91%;
+    --muted-foreground: 220 9% 46%;
+
+    --accent: 38 90% 43%;
+    --accent-foreground: 40 33% 95%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 40 15% 85%;
+    --input: 40 15% 85%;
+    --ring: 156 35% 17%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 156 35% 17%;
+    --sidebar-foreground: 40 33% 90%;
+    --sidebar-primary: 40 33% 95%;
+    --sidebar-primary-foreground: 156 35% 17%;
+    --sidebar-accent: 156 30% 22%;
+    --sidebar-accent-foreground: 40 33% 95%;
+    --sidebar-border: 156 25% 25%;
+    --sidebar-ring: 38 90% 43%;
+    --sidebar-muted: 156 20% 30%;
+
+    --success: 156 50% 40%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 90% 43%;
+    --warning-foreground: 156 35% 17%;
+    --info: 210 60% 50%;
+    --info-foreground: 0 0% 100%;
+
+    --font-display: 'DM Sans', system-ui, sans-serif;
+    --font-body: 'DM Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    /* Accent por SQUAD (área de atuação). Trocado em runtime pelo AreaProvider.
+       ATENÇÃO: estes tokens só pintam a SIDEBAR (filete, nome do squad e item
+       ativo), que é verde escuro nos dois temas. Por isso estão calibrados
+       contra fundo ESCURO (contraste >= 4.5:1). Se a sidebar um dia clarear,
+       estes valores precisam ser revistos.
+       Previdenciário é terracota (não âmbar) para não se confundir com o
+       dourado da marca (--accent: 38 90% 43%). */
+    --area-agro: 142 50% 58%;
+    --area-empresarial: 210 80% 66%;
+    --area-demandas-gerais: 220 12% 70%;
+    --area-previdenciario: 14 60% 66%;
+    --area-accent: var(--area-agro);
+
+    --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.07);
+    --shadow-card-hover: 0 4px 20px rgba(0, 0, 0, 0.12);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+  }
+}
+
+@layer components {
+  .floating-label-group {
+    @apply relative;
+  }
+
+  .floating-label-group input,
+  .floating-label-group textarea,
+  .floating-label-group select {
+    @apply w-full px-4 pt-5 pb-2 rounded-lg border border-border bg-card text-foreground 
+           transition-all duration-200 ease-out
+           focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent;
+  }
+
+  .floating-label-group label {
+    @apply absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground text-sm
+           transition-all duration-200 ease-out pointer-events-none;
+  }
+
+  .floating-label-group input:focus ~ label,
+  .floating-label-group input:not(:placeholder-shown) ~ label,
+  .floating-label-group textarea:focus ~ label,
+  .floating-label-group textarea:not(:placeholder-shown) ~ label,
+  .floating-label-group select:focus ~ label,
+  .floating-label-group select:not(:placeholder-shown) ~ label {
+    @apply top-2 text-xs text-accent translate-y-0;
+  }
+
+  .status-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .status-rascunho {
+    @apply bg-muted text-muted-foreground;
+  }
+
+  .status-analise {
+    @apply bg-info/15 text-info;
+  }
+
+  .status-finalizado {
+    @apply bg-success/15 text-success;
+  }
+
+  .status-exportado {
+    @apply bg-purple-100 text-purple-700;
+  }
+}
+
+/* ============================================================
+   Modo demonstração — borra dados sensíveis dos clientes
+   Ativar com: body.demo-mode (controlado pelo DemoModeToggle)
+   Marcar elementos sensíveis com [data-private] ou .private
+   ============================================================ */
+body.demo-mode [data-private],
+body.demo-mode .private {
+  filter: blur(6px);
+  user-select: none;
+}
+

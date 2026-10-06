@@ -1,0 +1,1 @@
+ALTER TYPE public.laudo_status ADD VALUE IF NOT EXISTS 'pendente' BEFORE 'analise';

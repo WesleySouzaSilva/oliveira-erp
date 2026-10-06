@@ -1,0 +1,46 @@
+menu lateral 
+
+PRODUTIVIDADE (remover menu)
+(tarefas e agenda, unificar e encaixar no dashboard) com opção de abertura de tela externa, 
+- manter quadro pequeno detalhe de resumo atual 
+- deve ser especifico para cada usuario
+- para gerar uma nova tarefa, deve-se vincular processo ja existente
+
+copiar modelo ADVBOX tarefas 
+- manter me forma de lista, conforme prioridade e prazo data
+- incluir calendario pequeno com notificacoes nas datas
+
+obs: notificacoes = inclusao de automação com disparo de email quando receber tarefas
+
+CLIENTES
+ - manter um menu separado, atualmente temos um cadastro separado e um dentro de comercial
+ - manter padrao ADVBOX cadastro basico
+ - manter cadastro de cadastro de contrato dentro do cliente tmbm
+
+ separar submenu LAUDOS, criar menu separado
+
+LAUDOS
+ - laudo deve ter vinculo com cliente, opcional
+ - manter estilo atual do sistema ja criado
+ - fazer  funcao para cadastro de texto (resumo do cliente sobre um arquivo), vincular arquivo (salvar link do diretorio no banco e arquivo no drive do servidor, ou seja arquivo e salvo tmbm para consultas futuras)
+ - usar IA para fazer laudo sobre os documetos do cliente e depois outro laudo sobre analise laudo cliente com situação atual do mercado (ex : cliente com problema com venda de feijao na epoca x, como seria o probema dele hoje (situacao antiga x situacao atual))
+ - verifica sobre os 2 laudos da IA, a diferenca de fazer separados, e depois fazer junto
+ - com isso tmos que sempre que enviar novos documentos ou excluir, sempre teremos um laudo atualizado
+ - o laudo sempre deve ser gerado conforme acionamento no front end pelo usuario
+ - manter o historico dos laudos gerados
+
+ - manter apenas submenu 'Meus Laudos' onde ele tera botao de acionamento para novo laudo
+ - remover templates e dados climaticos (sendo dados climatico usado depois na geracao do laudo e nao como menu separado)
+
+
+modificar o menu com nome Mensagens que e um chat interno na empresa, e esta amarrado ao menu CLientes, vamos criar um menu separado e chamar de Chat Interno, ou Conversas Internas, ele deve ser um exemplo de chato com cada usuario do sistema, onde pode ser enviado, msg, audios, fotos, arquivos e etc... parecido com os mensageiros como whatsapp, telegran, etc ...
+
+
+PROCESSO
+ - deve ter vinculo com cliente, logo deve tmbm ele pode acessar laudo tmbm se necessario
+
+
+
+
+
+

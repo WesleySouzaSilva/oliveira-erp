@@ -1,0 +1,1 @@
+CREATE POLICY "Users can delete own notifications" ON public.notificacoes_sistema FOR DELETE USING (auth.uid() = user_id);

@@ -1,0 +1,2 @@
+ALTER TABLE public.pedidos_servico DROP CONSTRAINT pedidos_servico_marca_check;
+ALTER TABLE public.pedidos_servico ADD CONSTRAINT pedidos_servico_marca_check CHECK (marca IN ('agro','juridico','geral'));

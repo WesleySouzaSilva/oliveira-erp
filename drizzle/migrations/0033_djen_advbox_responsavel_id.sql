@@ -1,0 +1,1 @@
+ALTER TABLE public.djen_comunicacoes ADD COLUMN IF NOT EXISTS advbox_responsavel_id TEXT;

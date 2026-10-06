@@ -1,0 +1,1 @@
+SELECT cron.schedule('advbox-sync-diario', '0 9 * * *', $cron$select net.http_post(url:='https://nfgrldtgowuquzmfgszw.supabase.co/functions/v1/advbox-importar-base',headers:=jsonb_build_object('Content-Type','application/json','x-cron-secret',(select value from public.app_secrets where key='advbox_sync_cron_secret')),body:='{}'::jsonb,timeout_milliseconds:=300000)$cron$);

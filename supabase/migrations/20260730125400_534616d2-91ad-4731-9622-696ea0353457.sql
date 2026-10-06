@@ -1,0 +1,1 @@
+UPDATE public.permission_groups SET modulos = (SELECT array_agg(DISTINCT x) FROM unnest(modulos || ARRAY['vencimentos']) AS x) WHERE id = '85f82341-c5df-420e-9666-a57c108cb315';

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { usePortalUser, isPortalStatus } from "@/hooks/usePortalUser";
+import { autenticadoApi } from "@/lib/api/http";
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -31,7 +32,10 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) {
-    return <Navigate to="/auth" replace />;
+    // Entrada unica da aplicacao: a autenticacao e da API propria (/api/v1/auth/login).
+    // Com sessao da API o usuario cai na home dos modulos migrados; sem sessao, no login.
+    // A tela legada do Supabase (/auth) so continua no ar como rota auxiliar.
+    return <Navigate to={autenticadoApi() ? "/erp" : "/erp/entrar"} replace />;
   }
 
   // Usuário externo do portal NUNCA pode entrar em rotas internas

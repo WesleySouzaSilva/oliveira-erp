@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
  * já fala com a nossa API — o sistema antigo continua em `/` (Supabase). Quando um módulo
  * sai daqui, ele entra no `AppLayout` normal.
  */
+const SUPABASE_CONFIGURADO = Boolean(import.meta.env.VITE_SUPABASE_URL);
 export default function LayoutErp() {
   const navigate = useNavigate();
   const [usuario, setUsuario] = useState<UsuarioApi | null>(() => usuarioApi());
@@ -64,11 +65,13 @@ export default function LayoutErp() {
           <div className="px-2 text-xs text-muted-foreground truncate" title={usuario?.email}>
             {usuario?.nome || usuario?.email}
           </div>
-          <Button variant="outline" size="sm" className="w-full justify-start" asChild>
-            <a href="/">
-              <Building2 className="w-4 h-4 mr-2" /> Sistema antigo
-            </a>
-          </Button>
+          {SUPABASE_CONFIGURADO && (
+            <Button variant="outline" size="sm" className="w-full justify-start" asChild>
+              <a href="/">
+                <Building2 className="w-4 h-4 mr-2" /> Sistema antigo
+              </a>
+            </Button>
+          )}
           <Button variant="ghost" size="sm" className="w-full justify-start" onClick={sair}>
             <LogOut className="w-4 h-4 mr-2" /> Sair
           </Button>

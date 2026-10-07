@@ -17,6 +17,7 @@ import { useTemCodigosTribunais } from "@/hooks/useTemCodigosTribunais";
 import { usePapelTrein } from "@/lib/treinamentos";
 import { useOperacoesSemTitular } from "@/hooks/useOperacoesSemTitular";
 import { preloadRota } from "@/lib/lazyRetry";
+import { logoutApi } from "@/lib/api/http";
 
 /** Ao passar o mouse ou focar um item do menu, baixa o código daquela tela. */
 function preloadDoLink(e: { target: EventTarget | null }) {
@@ -187,8 +188,13 @@ export function AppSidebar({ collapsed = false }: { collapsed?: boolean }) {
   };
 
   const handleSignOut = async () => {
-    await signOut();
-    navigate("/auth");
+    try {
+      await signOut();
+    } catch {
+      /* Supabase indisponivel em ambiente local: a saida da API propria segue */
+    }
+    await logoutApi();
+    navigate("/erp/entrar");
   };
 
   const renderSidebarContent = (onClose?: () => void) => (

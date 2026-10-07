@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Pencil, Plus, Search, Trash2, Users } from "lucide-react";
+import { Pencil, Save, Search, Trash2, UserPlus, Users } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ErroApi, mensagemDeErro } from "@/lib/api/http";
+import { MaskedInput } from "@/components/ui/masked-input";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   atualizarCliente,
@@ -48,7 +49,7 @@ const UFS = [
   "RJ","RN","RS","RO","RR","SC","SP","SE","TO",
 ];
 
-const ESTADOS_CIVIL = ["Solteiro(a)", "Casado(a)", "Divorciado(a)", "Viúvo(a)", "União estável"];
+const ESTADOS_CIVIL = ["Solteiro(a)", "Casado(a)", "União Estável", "Divorciado(a)", "Viúvo(a)"];
 
 interface Formulario {
   nome: string;
@@ -156,6 +157,11 @@ export default function Clientes() {
   const [form, setForm] = useState<Formulario>(FORM_VAZIO);
   const [salvando, setSalvando] = useState(false);
 
+  // Busca ao digitar (mesmo comportamento da tela legada), com debounce para não
+  // disparar um pedido por tecla — a primeira carga já sai no efeito de montagem.
+  const primeiraBusca = useRef(true);
+  const timerBusca = useRef<number | null>(null);
+
   const campo = (nome: keyof Formulario) => ({
     id: `cliente-${nome}`,
     value: form[nome],
@@ -188,6 +194,18 @@ export default function Clientes() {
     carregar("", 0);
   }, [carregar]);
 
+  useEffect(() => {
+    if (primeiraBusca.current) {
+      primeiraBusca.current = false;
+      return;
+    }
+    if (timerBusca.current) window.clearTimeout(timerBusca.current);
+    timerBusca.current = window.setTimeout(() => carregar(busca, 0), 300);
+    return () => {
+      if (timerBusca.current) window.clearTimeout(timerBusca.current);
+    };
+  }, [busca, carregar]);
+
   const excluir = async (cliente: Cliente) => {
     const confirmado = await confirmar({
       title: `Excluir "${cliente.nome}"?`,
@@ -215,6 +233,7 @@ export default function Clientes() {
 
   const buscar = (evento: React.FormEvent) => {
     evento.preventDefault();
+    if (timerBusca.current) window.clearTimeout(timerBusca.current);
     carregar(busca, 0);
   };
 
@@ -271,31 +290,29 @@ export default function Clientes() {
       <PageHeader
         icon={Users}
         title="Clientes"
-        subtitle="Cadastro de clientes da organização — direto na API própria"
+        subtitle={`${total} cliente${total === 1 ? "" : "s"} cadastrado${total === 1 ? "" : "s"}`}
         breadcrumb={[{ label: "Módulos na API" }, { label: "Clientes" }]}
         actions={
-          <Button onClick={abrirNovo}>
-            <Plus className="w-4 h-4 mr-2" /> Novo cliente
-          </Button>
+          <button
+            onClick={abrirNovo}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-accent text-accent-foreground hover:shadow-card-hover transition-all"
+          >
+            <UserPlus className="w-4 h-4" /> Novo Cliente
+          </button>
         }
       />
 
-      <Card className="p-4">
-        <form onSubmit={buscar} className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[16rem] flex-1">
-            <Label htmlFor="cliente-busca">Buscar por nome</Label>
-            <Input
-              id="cliente-busca"
-              value={busca}
-              placeholder="Ex.: Fazenda Santa Clara"
-              onChange={(e) => setBusca(e.target.value)}
-            />
-          </div>
-          <Button type="submit" variant="outline" disabled={carregando}>
-            <Search className="w-4 h-4 mr-2" /> Buscar
-          </Button>
-        </form>
-      </Card>
+      {/* Busca por nome — mesmo padrão da tela legada: ícone dentro do campo */}
+      <form onSubmit={buscar} className="relative mb-2">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar cliente por nome..."
+          aria-label="Buscar cliente por nome"
+          className="pl-9"
+        />
+      </form>
 
       {carregando && !pagina ? (
         <ListSkeleton rows={6} />
@@ -409,82 +426,100 @@ export default function Clientes() {
           </DialogHeader>
 
           <form onSubmit={salvar} className="space-y-5">
-            <section className="space-y-3">
-              <h3 className="font-serif font-bold text-sm">Identificação</h3>
+            <section className="rounded-xl border border-border bg-card p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-foreground">Identificação</h3>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="sm:col-span-2 space-y-1.5">
-                  <Label htmlFor="cliente-nome">Nome *</Label>
-                  <Input {...campo("nome")} placeholder="Nome ou razão social do cliente" required />
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-nome">Nome do Cliente / Produtor *</Label>
+                  <Input {...campo("nome")} placeholder="Nome completo" required />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="cliente-cpfCnpj">CPF/CNPJ</Label>
-                  <Input {...campo("cpfCnpj")} placeholder="000.000.000-00" />
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-cpfCnpj">CPF/CNPJ</Label>
+                  <MaskedInput
+                    id="cliente-cpfCnpj"
+                    mask="cpfCnpj"
+                    value={form.cpfCnpj}
+                    onChange={(v) => setForm((atual) => ({ ...atual, cpfCnpj: v }))}
+                    placeholder="000.000.000-00"
+                  />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="cliente-rg">RG</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-rg">RG</Label>
                   <Input {...campo("rg")} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="cliente-orgaoEmissor">Órgão emissor</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-orgaoEmissor">Órgão emissor</Label>
                   <Input {...campo("orgaoEmissor")} placeholder="Ex.: DETRAN/GO" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="cliente-nacionalidade">Nacionalidade</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-nacionalidade">Nacionalidade</Label>
                   <Input {...campo("nacionalidade")} placeholder="Brasileira" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="cliente-estadoCivil">Estado civil</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-estadoCivil">Estado civil</Label>
                   <select
                     id="cliente-estadoCivil"
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     value={form.estadoCivil}
                     onChange={(e) => setForm((atual) => ({ ...atual, estadoCivil: e.target.value }))}
                   >
-                    <option value="">—</option>
+                    <option value="">Selecione</option>
                     {ESTADOS_CIVIL.map((estado) => (
                       <option key={estado} value={estado}>{estado}</option>
                     ))}
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="cliente-profissao">Profissão</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-profissao">Profissão</Label>
                   <Input {...campo("profissao")} placeholder="Produtor Rural" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="cliente-email">E-mail</Label>
-                  <Input {...campo("email")} type="email" placeholder="cliente@exemplo.com" />
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-email">E-mail</Label>
+                  <Input {...campo("email")} type="email" placeholder="email@exemplo.com" />
                 </div>
               </div>
             </section>
 
-            <section className="space-y-3">
-              <h3 className="font-serif font-bold text-sm">Contato e endereço</h3>
+            <section className="rounded-xl border border-border bg-card p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-foreground">Contato e endereço</h3>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="cliente-telefone">Telefone</Label>
-                  <Input {...campo("telefone")} placeholder="(00) 00000-0000" />
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-telefone">Telefone</Label>
+                  <MaskedInput
+                    id="cliente-telefone"
+                    mask="telefone"
+                    value={form.telefone}
+                    onChange={(v) => setForm((atual) => ({ ...atual, telefone: v }))}
+                    placeholder="(00) 00000-0000"
+                  />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="cliente-cep">CEP</Label>
-                  <Input {...campo("cep")} placeholder="00000-000" />
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-cep">CEP</Label>
+                  <MaskedInput
+                    id="cliente-cep"
+                    mask="cep"
+                    value={form.cep}
+                    onChange={(v) => setForm((atual) => ({ ...atual, cep: v }))}
+                    placeholder="00000-000"
+                  />
                 </div>
                 <div className="sm:col-span-2 space-y-1.5">
-                  <Label htmlFor="cliente-endereco">Endereço</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-endereco">Endereço</Label>
                   <Input {...campo("endereco")} placeholder="Rua, número, bairro" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="cliente-municipio">Município</Label>
-                  <Input {...campo("municipio")} />
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-municipio">Município</Label>
+                  <Input {...campo("municipio")} placeholder="Município" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="cliente-uf">UF</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-uf">UF</Label>
                   <select
                     id="cliente-uf"
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     value={form.uf}
                     onChange={(e) => setForm((atual) => ({ ...atual, uf: e.target.value }))}
                   >
-                    <option value="">—</option>
+                    <option value="">Selecione</option>
                     {UFS.map((uf) => (
                       <option key={uf} value={uf}>{uf}</option>
                     ))}
@@ -493,23 +528,23 @@ export default function Clientes() {
               </div>
             </section>
 
-            <section className="space-y-3">
-              <h3 className="font-serif font-bold text-sm">Propriedade</h3>
+            <section className="rounded-xl border border-border bg-card p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-foreground">Propriedade</h3>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="cliente-nomePropriedade">Nome da propriedade</Label>
-                  <Input {...campo("nomePropriedade")} />
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-nomePropriedade">Nome da Propriedade</Label>
+                  <Input {...campo("nomePropriedade")} placeholder="Ex: Sítio São José" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="cliente-areaHectares">Área (hectares)</Label>
-                  <Input {...campo("areaHectares")} inputMode="decimal" placeholder="320,5" />
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-areaHectares">Área (hectares)</Label>
+                  <Input {...campo("areaHectares")} type="number" step="0.01" placeholder="Ex: 50" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="cliente-culturaPrincipal">Cultura principal</Label>
-                  <Input {...campo("culturaPrincipal")} placeholder="Soja" />
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-culturaPrincipal">Cultura principal</Label>
+                  <Input {...campo("culturaPrincipal")} placeholder="Ex: Soja, Milho, Café" />
                 </div>
                 <div className="sm:col-span-2 space-y-1.5">
-                  <Label htmlFor="cliente-observacoes">Observações</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-observacoes">Observações</Label>
                   <textarea
                     id="cliente-observacoes"
                     className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -524,9 +559,14 @@ export default function Clientes() {
               <Button type="button" variant="outline" onClick={() => setDialogAberto(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={salvando}>
-                {salvando ? "Salvando..." : editando ? "Salvar alterações" : "Cadastrar cliente"}
-              </Button>
+              <button
+                type="submit"
+                disabled={salvando}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-accent text-accent-foreground hover:shadow-card-hover transition-all disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                {salvando ? "Salvando..." : editando ? "Salvar alterações" : "Cadastrar Cliente"}
+              </button>
             </DialogFooter>
           </form>
         </DialogContent>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { LogIn } from "lucide-react";
@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { API_BASE_URL } from "@/config/api";
-import { loginApi, mensagemDeErro } from "@/lib/api/http";
+import { autenticadoApi, loginApi, mensagemDeErro } from "@/lib/api/http";
 
 /**
  * Entrada dos módulos já migrados (`/erp/entrar`). Autentica na **nossa API**
@@ -20,6 +20,12 @@ export default function Entrar() {
   const [senha, setSenha] = useState("");
   const [entrando, setEntrando] = useState(false);
 
+  // Sessão da API já válida (guarda mandou para cá sem token vencido?): segue direto
+  // para a home dos módulos, em vez de pedir a mesma credencial de novo.
+  useEffect(() => {
+    if (autenticadoApi()) navigate("/erp", { replace: true });
+  }, [navigate]);
+
   const entrar = async (evento: React.FormEvent) => {
     evento.preventDefault();
     if (!email.trim() || !senha) {
@@ -30,7 +36,7 @@ export default function Entrar() {
     try {
       await loginApi(email.trim(), senha);
       toast.success("Bem-vindo de volta");
-      navigate("/erp/clientes", { replace: true });
+      navigate("/erp", { replace: true });
     } catch (erro) {
       toast.error(mensagemDeErro(erro));
     } finally {

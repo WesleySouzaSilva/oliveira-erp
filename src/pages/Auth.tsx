@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,12 +7,23 @@ import { useToast } from "@/hooks/use-toast";
 import logoLight from "@/assets/logo-light.png";
 import heroField from "@/assets/auth-hero-field.jpg";
 
+/**
+ * Sem `VITE_SUPABASE_URL` o cliente supabase-js cai em `https://placeholder.supabase.co`,
+ * o navegador falha em DNS e o login morre em "Failed to fetch". Nesse caso a entrada da
+ * aplicação é a nossa API: `/auth` só continua servindo quando o Supabase está configurado.
+ */
+const SUPABASE_CONFIGURADO = Boolean(import.meta.env.VITE_SUPABASE_URL);
+
 export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (!SUPABASE_CONFIGURADO) navigate("/erp/entrar", { replace: true });
+  }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,6 +43,9 @@ export default function Auth() {
       setLoading(false);
     }
   };
+
+  // Supabase sem credencial local: o formulário do Supabase não tem para onde ir.
+  if (!SUPABASE_CONFIGURADO) return null;
 
   return (
     <main className="min-h-dvh w-full relative flex items-center justify-center bg-[#F5F2EA] font-body overflow-hidden px-6 py-12">

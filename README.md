@@ -67,6 +67,12 @@ src/
 Rotas novas ficam sob `/erp/...` (`/erp/entrar`, `/erp/clientes`) e não passam pelo login do
 Supabase: autenticam contra a nossa API.
 
+**A entrada da aplicação é `/erp/entrar`**: as rotas protegidas (`ProtectedRoute`) sem sessão da
+API vão para lá — não mais para `/auth`. `Sair` encerra a sessão da API e volta para o mesmo lugar.
+A tela legada do Supabase continua existindo como rota auxiliar (`/auth`) e só funciona com
+`VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY` no `.env`; sem elas o supabase-js chama
+`https://placeholder.supabase.co` e o navegador falha em DNS com "Failed to fetch".
+
 ---
 
 ## Padrões do projeto

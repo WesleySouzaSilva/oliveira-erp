@@ -15,6 +15,7 @@ import { PortalRoute } from "@/components/portal/PortalRoute";
 const LayoutErp = lazyRetry(() => import("./components/erp/LayoutErp"));
 const EntrarApi = lazyRetry(() => import("./pages/erp/Entrar"));
 const ClientesApi = lazyRetry(() => import("./pages/erp/Clientes"));
+const HomeErp = lazyRetry(() => import("./pages/erp/Home"));
 // Páginas de entrada também sob demanda: tiram as animações do pacote inicial
 const Auth = lazyRetry(() => import("./pages/Auth"));
 const PortalLogin = lazyRetry(() => import("./pages/PortalLogin"));
@@ -192,6 +193,7 @@ registrarRotas({
   "/novo-cliente": NovoCliente,
   "/clientes/fechamento": NovoClienteFechamento,
   "/clientes": Clientes,
+  "/erp": HomeErp,
   "/erp/entrar": EntrarApi,
   "/erp/clientes": ClientesApi,
   "/feed": Feed,
@@ -270,7 +272,7 @@ const App = () => (
             {/* Módulos na API própria: login e menu próprios, sem Supabase */}
             <Route path="/erp/entrar" element={<EntrarApi />} />
             <Route path="/erp" element={<LayoutErp />}>
-              <Route index element={<Navigate to="/erp/clientes" replace />} />
+              <Route index element={<HomeErp />} />
               <Route path="clientes" element={<ClientesApi />} />
             </Route>
             <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />

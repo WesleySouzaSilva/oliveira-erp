@@ -45,18 +45,8 @@ export interface Cliente extends ClienteNovo {
   updatedAt?: string;
 }
 
-/** Página no contrato estável da API (`Page` → `content` + `page`). */
-export interface Pagina<T> {
-  content: T[];
-  page: {
-    size: number;
-    number: number;
-    totalElements: number;
-    totalPages: number;
-    first: boolean;
-    last: boolean;
-  };
-}
+/** Página no contrato estável da API (`Page` → `content` + `page`) — mora em `pagina.ts`. */
+export type { Pagina } from "@/lib/api/pagina";
 
 export interface FiltroClientes {
   nome?: string;

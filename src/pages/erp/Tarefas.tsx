@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format, addDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   AlertTriangle, BarChart3, CheckCircle2, Circle, Clock, Kanban, LayoutList,
@@ -34,6 +35,7 @@ import {
 import { TabelaTarefas } from "@/pages/erp/TarefasLista";
 import { CalendarioTarefas } from "@/pages/erp/TarefasCalendario";
 import { mapaDeNomes } from "@/lib/api/membros";
+import { ClienteBusca, type ClienteEscolhido } from "@/components/erp/ClienteBusca";
 
 /**
  * Tarefas — painel "Minhas tarefas" migrado da tela legada `/tarefas`
@@ -76,6 +78,8 @@ function statusDaTarefa(t: Tarefa): ColunaKanban {
 
 export default function TarefasApi() {
   const usuario = usuarioApi();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState("");
@@ -89,6 +93,18 @@ export default function TarefasApi() {
   const [porPagina, setPorPagina] = useState(50);
   /** Dia escolhido no calendario para a nova tarefa com o vencimento ja preenchido. */
   const [dataPreta, setDataPreta] = useState<string | null>(null);
+  /** Cliente vindo da lista de Clientes (botao "Nova tarefa" da linha). */
+  const [clientePreta, setClientePreta] = useState<ClienteEscolhido | null>(null);
+  const clienteVindo = (location.state as { cliente?: ClienteEscolhido } | null)?.cliente ?? null;
+
+  // Consumo o estado passado pela lista de Clientes: abre o form ja com o cliente e
+  // limpa o state da rota, para reabrir manualmente depois nao reaparecer preenchido.
+  useEffect(() => {
+    if (!clienteVindo) return;
+    setClientePreta(clienteVindo);
+    setDialogNova(true);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [clienteVindo, location.pathname, navigate]);
   /** userId -> nome, para a coluna "Responsavel" nao virar UUID na tela. */
   const [nomes, setNomes] = useState<Map<string, string>>(() => new Map());
 
@@ -366,8 +382,10 @@ export default function TarefasApi() {
         onFechar={() => {
           setDialogNova(false);
           setDataPreta(null);
+          setClientePreta(null);
         }}
         dataInicial={dataPreta}
+        clienteInicial={clientePreta}
         onCriar={async (dados) => {
           try {
             const nova = await criarTarefa(dados);
@@ -639,7 +657,7 @@ function DrawerTarefa({
 /* ---------------------------------------------------------- nova tarefa */
 
 function DialogNovaTarefa({
-  aberto, onFechar, onCriar, dataInicial,
+  aberto, onFechar, onCriar, dataInicial, clienteInicial,
 }: {
   aberto: boolean;
   onFechar: () => void;
@@ -652,25 +670,31 @@ function DialogNovaTarefa({
   }) => Promise<void>;
   /** Vencimento ja preenchido quando a tarefa nasce pelo calendario. */
   dataInicial?: string | null;
+  /** Cliente ja escolhido quando a tarefa nasce pela lista de Clientes. */
+  clienteInicial?: ClienteEscolhido | null;
 }) {
   const [titulo, setTitulo] = useState("");
   const [descricao, setDescricao] = useState("");
   const [vencimento, setVencimento] = useState(HOJE);
   const [prioridade, setPrioridade] = useState("normal");
-  const [nomeCliente, setNomeCliente] = useState("");
+  const [cliente, setCliente] = useState<ClienteEscolhido | null>(null);
   const [salvando, setSalvando] = useState(false);
 
-  // o dialog fica montado: ao abrir, volta o vencimento para o dia pedido (ou hoje)
+  // o dialog fica montado: ao abrir, volta vencimento e cliente para o que veio do
+  // calendario ou da lista de Clientes (ou limpa)
   useEffect(() => {
-    if (aberto) setVencimento(dataInicial ?? HOJE);
-  }, [aberto, dataInicial]);
+    if (aberto) {
+      setVencimento(dataInicial ?? HOJE);
+      setCliente(clienteInicial ?? null);
+    }
+  }, [aberto, dataInicial, clienteInicial]);
 
   const limpar = () => {
     setTitulo("");
     setDescricao("");
     setVencimento(HOJE);
     setPrioridade("normal");
-    setNomeCliente("");
+    setCliente(null);
   };
 
   const enviar = async (evento: React.FormEvent) => {
@@ -686,7 +710,7 @@ function DialogNovaTarefa({
         descricao: descricao.trim() || undefined,
         dataVencimento: vencimento,
         prioridade,
-        nomeCliente: nomeCliente.trim() || undefined,
+        nomeCliente: cliente?.nome.trim() || undefined,
       });
       limpar();
     } finally {
@@ -758,11 +782,12 @@ function DialogNovaTarefa({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="nova-cliente">Cliente (opcional)</Label>
-            <Input
+            {/* key muda ao abrir: o component renasce e aplica o prefill recebido */}
+            <ClienteBusca
+              key={aberto ? `ab-${clienteInicial?.id ?? clienteInicial?.nome ?? "novo"}` : "fechado"}
               id="nova-cliente"
-              value={nomeCliente}
-              onChange={(evento) => setNomeCliente(evento.target.value)}
-              maxLength={200}
+              inicial={clienteInicial}
+              onChange={setCliente}
             />
           </div>
           <DialogFooter>

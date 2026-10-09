@@ -4,9 +4,13 @@ Front **React 18 + TypeScript + Vite + Tailwind/shadcn** do sistema **Oliveira**
 do front legado (Lovable + Supabase) para a **migração gradual para a API própria**
 ([`oliveira-api`](../oliveira-api), Java 17 + Spring Boot).
 
-> **Status:** base importada e **primeiro módulo migrado: Clientes** — login com token da nossa
-> API, listagem, cadastro completo, edição e exclusão (`/erp/clientes`). Os acessos vão sendo
-> trocados **módulo a módulo**: em vez de `supabase.from(...)`, a tela passa a chamar
+> **Status:** base importada; módulos já ligados à nossa API: **Clientes** e **Tarefas**
+> (esta em curso). Login com token da própria API (`/erp/entrar`); Clientes tem listagem,
+> cadastro completo, edição e exclusão (`/erp/clientes`); Tarefas tem o painel
+> (`/erp/tarefas`) com bloco "Minhas tarefas" na Home. O plano da parte de Tarefas
+> (reajuste para lista + calendário, distribuição por carga, timeline) está em
+> [`docs/plano-tarefas.md`](docs/plano-tarefas.md). Os acessos vão sendo trocados
+> **módulo a módulo**: em vez de `supabase.from(...)`, a tela passa a chamar
 > `/api/v1/...` — as telas restantes continuam no Supabase.
 
 ---
@@ -54,18 +58,21 @@ src/
 ├── lib/
 │   └── api/
 │       ├── http.ts            # fetch autenticado, token, erros RFC 7807, login/logout
-│       └── clientes.ts        # recursos de cliente (listar/criar/atualizar)
+│       ├── clientes.ts        # recursos de cliente (listar/criar/atualizar)
+│       ├── tarefas.ts         # recursos de tarefa (listar/criar/atualizar/concluir)
+│       └── contratos.ts       # contratos do cliente + anexos (upload/download)
 ├── components/erp/
 │   └── LayoutErp.tsx          # layout + menu dos módulos já migrados
 ├── pages/erp/
 │   ├── Entrar.tsx             # login na nossa API
-│   └── Clientes.tsx           # lista + cadastro completo do cliente
+│   ├── Clientes.tsx           # lista + cadastro completo do cliente
+│   └── Tarefas.tsx            # quadro de tarefas (em reajuste — ver docs/plano-tarefas.md)
 ├── integrations/supabase/     # LEGADO — sai conforme os módulos migram
 └── pages/, components/        # LEGADO — telas restantes do sistema atual
 ```
 
-Rotas novas ficam sob `/erp/...` (`/erp/entrar`, `/erp/clientes`) e não passam pelo login do
-Supabase: autenticam contra a nossa API.
+Rotas novas ficam sob `/erp/...` (`/erp/entrar`, `/erp/tarefas`, `/erp/clientes`) e não passam
+pelo login do Supabase: autenticam contra a nossa API.
 
 **A entrada da aplicação é `/erp/entrar`**: as rotas protegidas (`ProtectedRoute`) sem sessão da
 API vão para lá — não mais para `/auth`. `Sair` encerra a sessão da API e volta para o mesmo lugar.

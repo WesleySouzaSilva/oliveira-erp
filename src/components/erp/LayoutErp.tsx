@@ -1,6 +1,6 @@
 import { NavLink, Navigate, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { Building2, LogOut, Users } from "lucide-react";
+import { Building2, ListChecks, LogOut, Users } from "lucide-react";
 import { autenticadoApi, buscarUsuarioAtual, logoutApi, usuarioApi, type UsuarioApi } from "@/lib/api/http";
 import { Button } from "@/components/ui/button";
 
@@ -49,6 +49,16 @@ export default function LayoutErp() {
         </div>
 
         <nav className="flex-1 p-3 space-y-1">
+          <NavLink
+            to="/erp/tarefas"
+            className={({ isActive }) =>
+              `flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
+                isActive ? "bg-primary text-primary-foreground font-medium" : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+              }`
+            }
+          >
+            <ListChecks className="w-4 h-4" /> Tarefas
+          </NavLink>
           <NavLink
             to="/erp/clientes"
             className={({ isActive }) =>

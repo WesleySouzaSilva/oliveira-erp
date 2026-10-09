@@ -24,3 +24,8 @@ test-results/
 .DS_Store
 Thumbs.db
 *~
+
+# ---- Exemplos do ADVBOX (docs/exemplo-*.html) ----
+# Páginas salvas do sistema legado contendo dados reais de clientes (CPF, bancos,
+# processos) — ficam so na maquina local; o plano delas esta em docs/plano-tarefas.md.
+docs/exemplo-*.html

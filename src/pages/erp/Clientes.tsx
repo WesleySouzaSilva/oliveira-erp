@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Pencil, Save, Search, Trash2, UserPlus, Users } from "lucide-react";
+import { ListChecks, Pencil, Save, Search, Trash2, UserPlus, Users } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -368,6 +368,18 @@ export default function Clientes() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title={`Nova tarefa para ${cliente.nome}`}
+                          onClick={() =>
+                            navigate("/erp/tarefas", {
+                              state: { cliente: { id: cliente.id, nome: cliente.nome } },
+                            })
+                          }
+                        >
+                          <ListChecks className="w-4 h-4 mr-1" /> Nova tarefa
+                        </Button>
                         <Button size="sm" variant="ghost" onClick={() => abrirEdicao(cliente)}>
                           <Pencil className="w-4 h-4 mr-1" /> Editar
                         </Button>

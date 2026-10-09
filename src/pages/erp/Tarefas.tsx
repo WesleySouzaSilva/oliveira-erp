@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format, addDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   AlertTriangle, BarChart3, CheckCircle2, Circle, Clock, Kanban, LayoutList,
@@ -29,18 +30,20 @@ import {
 } from "@/components/ui/dialog";
 import { ErroApi, mensagemDeErro, usuarioApi } from "@/lib/api/http";
 import {
-  atualizarTarefa, criarTarefa, listarTarefas, type Tarefa,
+  atualizarTarefa, criarTarefa, listarTarefas, prazoDaTarefa, type Tarefa,
 } from "@/lib/api/tarefas";
 import { TabelaTarefas } from "@/pages/erp/TarefasLista";
 import { CalendarioTarefas } from "@/pages/erp/TarefasCalendario";
 import { mapaDeNomes } from "@/lib/api/membros";
+import { ClienteBusca, type ClienteEscolhido } from "@/components/erp/ClienteBusca";
 
 /**
  * Tarefas — painel "Minhas tarefas" migrado da tela legada `/tarefas`
  * (`fonts-lovable/src/pages/Tarefas.tsx`), em duas visões:
  *
- * - **Lista**: seções Prazo fatal / Hoje / Próximas / Concluídas, com toggle de
- *   conclusão, badge "Urgente" e detalhe em drawer (mesmo agrupamento do legado);
+ * - **Lista**: tabela no padrão ADVBOX com os quatro marcadores; no topo, os KPIs e o
+ *   calendario de 270px (`.col-md-small-fixed` do original) — clicar num dia filtra a
+ *   tabela embaixo do card, como o `type:"selector"` do plugin do ADVBOX;
  * - **Kanban**: as mesmas quatro colunas em quadro com arrastar-e-soltar — soltar
  *   em "Concluídas" conclui; soltar em uma coluna de prazo reagenda a tarefa
  *   (Ontem / Hoje / +7 dias).
@@ -53,7 +56,7 @@ import { mapaDeNomes } from "@/lib/api/membros";
 
 const HOJE = new Date().toISOString().split("T")[0];
 
-type Vista = "lista" | "calendario" | "kanban";
+type Vista = "lista" | "kanban";
 
 const COLUNAS_KANBAN = [
   { id: "atrasadas", rotulo: "Atrasadas", tom: "text-destructive" },
@@ -76,11 +79,15 @@ function statusDaTarefa(t: Tarefa): ColunaKanban {
 
 export default function TarefasApi() {
   const usuario = usuarioApi();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState("");
   const [vista, setVista] = useState<Vista>("lista");
   const [semMaisPaginas, setSemMaisPaginas] = useState(true);
+  /** Dia clicado no calendario: filtra a tabela da aba Lista (null = todas). */
+  const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null);
 
   const [dialogNova, setDialogNova] = useState(false);
   const [tarefaAberta, setTarefaAberta] = useState<Tarefa | null>(null);
@@ -89,6 +96,18 @@ export default function TarefasApi() {
   const [porPagina, setPorPagina] = useState(50);
   /** Dia escolhido no calendario para a nova tarefa com o vencimento ja preenchido. */
   const [dataPreta, setDataPreta] = useState<string | null>(null);
+  /** Cliente vindo da lista de Clientes (botao "Nova tarefa" da linha). */
+  const [clientePreta, setClientePreta] = useState<ClienteEscolhido | null>(null);
+  const clienteVindo = (location.state as { cliente?: ClienteEscolhido } | null)?.cliente ?? null;
+
+  // Consumo o estado passado pela lista de Clientes: abre o form ja com o cliente e
+  // limpa o state da rota, para reabrir manualmente depois nao reaparecer preenchido.
+  useEffect(() => {
+    if (!clienteVindo) return;
+    setClientePreta(clienteVindo);
+    setDialogNova(true);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [clienteVindo, location.pathname, navigate]);
   /** userId -> nome, para a coluna "Responsavel" nao virar UUID na tela. */
   const [nomes, setNomes] = useState<Map<string, string>>(() => new Map());
 
@@ -232,6 +251,22 @@ export default function TarefasApi() {
     };
   }, [tarefas, hoje0]);
 
+  /**
+   * Recorte da tabela pelo dia escolhido no calendario — mesma regra de data do badge
+   * (prazo fatal, ou vencimento quando nao ha prazo), para o numero do dia e as linhas
+   * de baixo sempre baterem.
+   */
+  const tarefasDaLista = useMemo(
+    () =>
+      diaSelecionado
+        ? tarefas.filter((tarefa) => prazoDaTarefa(tarefa) === diaSelecionado)
+        : tarefas,
+    [tarefas, diaSelecionado],
+  );
+
+  // Trocar o dia zera a pagina da tabela.
+  useEffect(() => setPagina(0), [diaSelecionado]);
+
   const temAlgo = tarefas.length > 0;
 
   return (
@@ -248,16 +283,17 @@ export default function TarefasApi() {
                 <TabsTrigger value="lista" className="gap-1.5">
                   <LayoutList className="w-3.5 h-3.5" /> Lista
                 </TabsTrigger>
-                <TabsTrigger value="calendario" className="gap-1.5">
-                  <CalendarDays className="w-3.5 h-3.5" /> Calendário
-                </TabsTrigger>
                 <TabsTrigger value="kanban" className="gap-1.5">
                   <Kanban className="w-3.5 h-3.5" /> Kanban
                 </TabsTrigger>
               </TabsList>
             </Tabs>
             <button
-              onClick={() => setDialogNova(true)}
+              onClick={() => {
+                // Com um dia escolhido no calendario, a nova tarefa ja nasce nele.
+                setDataPreta(diaSelecionado);
+                setDialogNova(true);
+              }}
               className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-accent text-accent-foreground hover:shadow-card-hover transition-all"
             >
               <Plus className="w-4 h-4" /> Nova tarefa
@@ -278,22 +314,94 @@ export default function TarefasApi() {
         />
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Total" value={tarefas.length} icon={BarChart3} />
-        <KpiCard
-          label="Pendentes"
-          value={agrupadas.atrasadas.length + agrupadas.hoje.length + agrupadas.proximas.length}
-          icon={Clock}
-          tone="info"
-        />
-        <KpiCard label="Atrasadas" value={agrupadas.atrasadas.length} icon={AlertTriangle} tone="danger" />
-        <KpiCard label="Concluídas" value={agrupadas.concluidas.length} icon={CheckCircle2} tone="success" />
+      {/* KPIs (esquerda, 2 colunas x 2 linhas) + calendario maior no canto — so na aba Lista */}
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start">
+        <div className="grid grid-cols-2 gap-3">
+          <KpiCard label="Total" value={tarefas.length} icon={BarChart3} className="p-4" />
+          <KpiCard
+            label="Pendentes"
+            value={agrupadas.atrasadas.length + agrupadas.hoje.length + agrupadas.proximas.length}
+            icon={Clock}
+            tone="info"
+            className="p-4"
+          />
+          <KpiCard label="Atrasadas" value={agrupadas.atrasadas.length} icon={AlertTriangle} tone="danger" className="p-4" />
+          <KpiCard label="Concluídas" value={agrupadas.concluidas.length} icon={CheckCircle2} tone="success" className="p-4" />
+        </div>
+
+        {vista === "lista" && (
+          <CalendarioTarefas
+            tarefas={tarefas}
+            diaSelecionado={diaSelecionado}
+            onSelecionar={setDiaSelecionado}
+            className="w-full max-w-[380px] mx-auto lg:mx-0"
+          />
+        )}
       </div>
+
+      {/* Filtro do dia escolhido no calendario */}
+      {vista === "lista" && diaSelecionado && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-secondary font-medium text-foreground">
+            <CalendarDays className="w-3.5 h-3.5" />
+            Tarefas de {dataBr(diaSelecionado)}
+            <span className="text-muted-foreground">({tarefasDaLista.length})</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setDiaSelecionado(null)}
+            className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="w-3.5 h-3.5" /> Limpar (ver todas)
+          </button>
+        </div>
+      )}
 
       {carregando ? (
         <ListSkeleton rows={6} />
-      ) : !temAlgo ? (
+      ) : vista === "lista" ? (
+        tarefasDaLista.length > 0 ? (
+          <TabelaTarefas
+            tarefas={tarefasDaLista}
+            pagina={pagina}
+            porPagina={porPagina}
+            onPagina={setPagina}
+            onPorPagina={(quantidade) => {
+              setPorPagina(quantidade);
+              setPagina(0);
+            }}
+            onAbrir={setTarefaAberta}
+            onAlternar={alternarConcluida}
+            onMarcar={marcar}
+            nomeDeResponsavel={(userId) => nomes.get(userId) || "—"}
+          />
+        ) : diaSelecionado ? (
+          <EmptyState
+            icon={CalendarDays}
+            title="Nenhuma tarefa neste dia"
+            description={`Nenhuma tarefa com prazo em ${dataBr(diaSelecionado)}. Escolha outro dia ou limpe o filtro.`}
+          />
+        ) : (
+          <EmptyState
+            icon={ListChecks}
+            title={busca ? "Nada encontrado" : "Nenhuma tarefa ainda"}
+            description={
+              busca
+                ? "Nenhuma tarefa corresponde à busca."
+                : "Cadastre um cliente ou crie uma tarefa manual para começar."
+            }
+          />
+        )
+      ) : temAlgo ? (
+        <VisaoKanban
+          agrupadas={agrupadas}
+          arrastandoId={arrastandoId}
+          onArrastar={setArrastandoId}
+          onSoltar={soltar}
+          onAbrir={setTarefaAberta}
+          onAlternar={alternarConcluida}
+        />
+      ) : (
         <EmptyState
           icon={ListChecks}
           title={busca ? "Nada encontrado" : "Nenhuma tarefa ainda"}
@@ -302,39 +410,6 @@ export default function TarefasApi() {
               ? "Nenhuma tarefa corresponde à busca."
               : "Cadastre um cliente ou crie uma tarefa manual para começar."
           }
-        />
-      ) : vista === "lista" ? (
-        <TabelaTarefas
-          tarefas={tarefas}
-          pagina={pagina}
-          porPagina={porPagina}
-          onPagina={setPagina}
-          onPorPagina={(quantidade) => {
-            setPorPagina(quantidade);
-            setPagina(0);
-          }}
-          onAbrir={setTarefaAberta}
-          onAlternar={alternarConcluida}
-          onMarcar={marcar}
-          nomeDeResponsavel={(userId) => nomes.get(userId) || "—"}
-        />
-      ) : vista === "calendario" ? (
-        <CalendarioTarefas
-          tarefas={tarefas}
-          onAbrir={setTarefaAberta}
-          onNova={(data) => {
-            setDataPreta(data);
-            setDialogNova(true);
-          }}
-        />
-      ) : (
-        <VisaoKanban
-          agrupadas={agrupadas}
-          arrastandoId={arrastandoId}
-          onArrastar={setArrastandoId}
-          onSoltar={soltar}
-          onAbrir={setTarefaAberta}
-          onAlternar={alternarConcluida}
         />
       )}
 
@@ -366,8 +441,10 @@ export default function TarefasApi() {
         onFechar={() => {
           setDialogNova(false);
           setDataPreta(null);
+          setClientePreta(null);
         }}
         dataInicial={dataPreta}
+        clienteInicial={clientePreta}
         onCriar={async (dados) => {
           try {
             const nova = await criarTarefa(dados);
@@ -639,7 +716,7 @@ function DrawerTarefa({
 /* ---------------------------------------------------------- nova tarefa */
 
 function DialogNovaTarefa({
-  aberto, onFechar, onCriar, dataInicial,
+  aberto, onFechar, onCriar, dataInicial, clienteInicial,
 }: {
   aberto: boolean;
   onFechar: () => void;
@@ -652,25 +729,31 @@ function DialogNovaTarefa({
   }) => Promise<void>;
   /** Vencimento ja preenchido quando a tarefa nasce pelo calendario. */
   dataInicial?: string | null;
+  /** Cliente ja escolhido quando a tarefa nasce pela lista de Clientes. */
+  clienteInicial?: ClienteEscolhido | null;
 }) {
   const [titulo, setTitulo] = useState("");
   const [descricao, setDescricao] = useState("");
   const [vencimento, setVencimento] = useState(HOJE);
   const [prioridade, setPrioridade] = useState("normal");
-  const [nomeCliente, setNomeCliente] = useState("");
+  const [cliente, setCliente] = useState<ClienteEscolhido | null>(null);
   const [salvando, setSalvando] = useState(false);
 
-  // o dialog fica montado: ao abrir, volta o vencimento para o dia pedido (ou hoje)
+  // o dialog fica montado: ao abrir, volta vencimento e cliente para o que veio do
+  // calendario ou da lista de Clientes (ou limpa)
   useEffect(() => {
-    if (aberto) setVencimento(dataInicial ?? HOJE);
-  }, [aberto, dataInicial]);
+    if (aberto) {
+      setVencimento(dataInicial ?? HOJE);
+      setCliente(clienteInicial ?? null);
+    }
+  }, [aberto, dataInicial, clienteInicial]);
 
   const limpar = () => {
     setTitulo("");
     setDescricao("");
     setVencimento(HOJE);
     setPrioridade("normal");
-    setNomeCliente("");
+    setCliente(null);
   };
 
   const enviar = async (evento: React.FormEvent) => {
@@ -686,7 +769,7 @@ function DialogNovaTarefa({
         descricao: descricao.trim() || undefined,
         dataVencimento: vencimento,
         prioridade,
-        nomeCliente: nomeCliente.trim() || undefined,
+        nomeCliente: cliente?.nome.trim() || undefined,
       });
       limpar();
     } finally {
@@ -758,11 +841,12 @@ function DialogNovaTarefa({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="nova-cliente">Cliente (opcional)</Label>
-            <Input
+            {/* key muda ao abrir: o component renasce e aplica o prefill recebido */}
+            <ClienteBusca
+              key={aberto ? `ab-${clienteInicial?.id ?? clienteInicial?.nome ?? "novo"}` : "fechado"}
               id="nova-cliente"
-              value={nomeCliente}
-              onChange={(evento) => setNomeCliente(evento.target.value)}
-              maxLength={200}
+              inicial={clienteInicial}
+              onChange={setCliente}
             />
           </div>
           <DialogFooter>

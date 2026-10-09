@@ -6,6 +6,7 @@ import {
   AlertTriangle, BarChart3, CheckCircle2, Circle, Clock, Kanban, LayoutList,
   ListChecks, Plus, Save, Search, User, X,
 } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -31,6 +32,7 @@ import {
   atualizarTarefa, criarTarefa, listarTarefas, type Tarefa,
 } from "@/lib/api/tarefas";
 import { TabelaTarefas } from "@/pages/erp/TarefasLista";
+import { CalendarioTarefas } from "@/pages/erp/TarefasCalendario";
 import { mapaDeNomes } from "@/lib/api/membros";
 
 /**
@@ -51,7 +53,7 @@ import { mapaDeNomes } from "@/lib/api/membros";
 
 const HOJE = new Date().toISOString().split("T")[0];
 
-type Vista = "lista" | "kanban";
+type Vista = "lista" | "calendario" | "kanban";
 
 const COLUNAS_KANBAN = [
   { id: "atrasadas", rotulo: "Atrasadas", tom: "text-destructive" },
@@ -85,6 +87,8 @@ export default function TarefasApi() {
   const [arrastandoId, setArrastandoId] = useState<string | null>(null);
   const [pagina, setPagina] = useState(0);
   const [porPagina, setPorPagina] = useState(50);
+  /** Dia escolhido no calendario para a nova tarefa com o vencimento ja preenchido. */
+  const [dataPreta, setDataPreta] = useState<string | null>(null);
   /** userId -> nome, para a coluna "Responsavel" nao virar UUID na tela. */
   const [nomes, setNomes] = useState<Map<string, string>>(() => new Map());
 
@@ -244,6 +248,9 @@ export default function TarefasApi() {
                 <TabsTrigger value="lista" className="gap-1.5">
                   <LayoutList className="w-3.5 h-3.5" /> Lista
                 </TabsTrigger>
+                <TabsTrigger value="calendario" className="gap-1.5">
+                  <CalendarDays className="w-3.5 h-3.5" /> Calendário
+                </TabsTrigger>
                 <TabsTrigger value="kanban" className="gap-1.5">
                   <Kanban className="w-3.5 h-3.5" /> Kanban
                 </TabsTrigger>
@@ -311,6 +318,15 @@ export default function TarefasApi() {
           onMarcar={marcar}
           nomeDeResponsavel={(userId) => nomes.get(userId) || "—"}
         />
+      ) : vista === "calendario" ? (
+        <CalendarioTarefas
+          tarefas={tarefas}
+          onAbrir={setTarefaAberta}
+          onNova={(data) => {
+            setDataPreta(data);
+            setDialogNova(true);
+          }}
+        />
       ) : (
         <VisaoKanban
           agrupadas={agrupadas}
@@ -347,7 +363,11 @@ export default function TarefasApi() {
 
       <DialogNovaTarefa
         aberto={dialogNova}
-        onFechar={() => setDialogNova(false)}
+        onFechar={() => {
+          setDialogNova(false);
+          setDataPreta(null);
+        }}
+        dataInicial={dataPreta}
         onCriar={async (dados) => {
           try {
             const nova = await criarTarefa(dados);
@@ -619,7 +639,7 @@ function DrawerTarefa({
 /* ---------------------------------------------------------- nova tarefa */
 
 function DialogNovaTarefa({
-  aberto, onFechar, onCriar,
+  aberto, onFechar, onCriar, dataInicial,
 }: {
   aberto: boolean;
   onFechar: () => void;
@@ -630,6 +650,8 @@ function DialogNovaTarefa({
     prioridade?: string;
     nomeCliente?: string;
   }) => Promise<void>;
+  /** Vencimento ja preenchido quando a tarefa nasce pelo calendario. */
+  dataInicial?: string | null;
 }) {
   const [titulo, setTitulo] = useState("");
   const [descricao, setDescricao] = useState("");
@@ -637,6 +659,11 @@ function DialogNovaTarefa({
   const [prioridade, setPrioridade] = useState("normal");
   const [nomeCliente, setNomeCliente] = useState("");
   const [salvando, setSalvando] = useState(false);
+
+  // o dialog fica montado: ao abrir, volta o vencimento para o dia pedido (ou hoje)
+  useEffect(() => {
+    if (aberto) setVencimento(dataInicial ?? HOJE);
+  }, [aberto, dataInicial]);
 
   const limpar = () => {
     setTitulo("");

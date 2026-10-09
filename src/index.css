@@ -73,6 +73,50 @@
     --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.07);
     --shadow-card-hover: 0 4px 20px rgba(0, 0, 0, 0.12);
   }
+
+  /* ================= TEMA ESCURO =================
+     Ativado pela classe `dark` no <html> (next-themes -> Tailwind darkMode: ["class"]).
+     Mesma família do tema claro (verde escuro de marca + âmbar), só que invertida em
+     luminosidade: fundo verde-carvão, superfícies um degrau acima e verde CLARO no lugar
+     do verde escuro de `--primary`, porque escuro sobre escuro não lê.
+     Contraste (foi checado): texto ~16:1, muted ~6:1, botão primário ~7:1.
+     --sidebar-* fica como está: é escura nos dois temas (é a barra de marca).
+     ================================================= */
+  .dark {
+    --background: 156 18% 8%;
+    --foreground: 40 25% 94%;
+
+    --card: 156 15% 11%;
+    --card-foreground: 40 25% 94%;
+
+    --popover: 156 15% 11%;
+    --popover-foreground: 40 25% 94%;
+
+    --primary: 156 45% 58%;
+    --primary-foreground: 156 45% 10%;
+
+    --secondary: 156 13% 17%;
+    --secondary-foreground: 40 25% 92%;
+
+    --muted: 156 12% 15%;
+    --muted-foreground: 40 10% 62%;
+
+    --accent: 38 90% 47%;
+    /* igual ao claro (as 123 usas de `text-accent-foreground` nao mudam de aparencia).
+       O texto do botão primário, que e `text-primary`, vira `dark:text-primary-foreground`
+       no button.tsx — ver comentario de la. */
+    --accent-foreground: 40 33% 95%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 156 14% 21%;
+    --input: 156 14% 23%;
+    --ring: 156 45% 58%;
+
+    --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.45);
+    --shadow-card-hover: 0 4px 20px rgba(0, 0, 0, 0.6);
+  }
 }
 
 @layer base {

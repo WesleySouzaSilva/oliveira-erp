@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Building2, ListChecks, LogOut, Users } from "lucide-react";
 import { autenticadoApi, buscarUsuarioAtual, logoutApi, usuarioApi, type UsuarioApi } from "@/lib/api/http";
 import { Button } from "@/components/ui/button";
+import { TemaToggle } from "@/components/theme/TemaToggle";
 
 /**
  * Layout dos módulos já migrados para a API própria (rotas `/erp/...`).
@@ -46,6 +47,7 @@ export default function LayoutErp() {
             <p className="font-serif font-bold text-sm">Oliveira</p>
             <p className="text-[11px] text-muted-foreground">módulos na API</p>
           </div>
+          <TemaToggle className="ml-auto" />
         </div>
 
         <nav className="flex-1 p-3 space-y-1">

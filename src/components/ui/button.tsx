@@ -11,7 +11,9 @@ const buttonVariants = cva(
       variant: {
         // PRIMÁRIO: dourado/accent (identidade Oliveira) — texto verde profundo p/ contraste forte
         default:
-          "bg-accent text-primary shadow-sm hover:bg-accent/90 hover:shadow-md disabled:shadow-none",
+          // escuro: --primary vira verde claro (legível sobre fundo escuro), mas sumiria
+          // sobre o dourado — aí entra --primary-foreground, que e verde profundo nos dois temas
+          "bg-accent text-primary dark:text-primary-foreground shadow-sm hover:bg-accent/90 hover:shadow-md disabled:shadow-none",
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
         // SECUNDÁRIO: verde-floresta contornado (ação de apoio)
@@ -21,7 +23,7 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
         // Alias retrocompatível — mesmo estilo do default dourado
         premium:
-          "bg-accent text-primary shadow-sm hover:bg-accent/90 hover:shadow-md disabled:shadow-none",
+          "bg-accent text-primary dark:text-primary-foreground shadow-sm hover:bg-accent/90 hover:shadow-md disabled:shadow-none",
         // Alias retrocompatível — mesmo estilo do secondary verde contornado
         "outline-green":
           "border border-primary/40 text-primary bg-background hover:bg-primary/5 hover:border-primary",

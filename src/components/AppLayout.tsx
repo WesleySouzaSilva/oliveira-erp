@@ -5,6 +5,7 @@ import { BugReportButton } from "./BugReportButton";
 const GlobalSearch = lazy(() => import("./GlobalSearch").then((m) => ({ default: m.GlobalSearch })));
 const AssistenteIA = lazy(() => import("./AssistenteIA").then((m) => ({ default: m.AssistenteIA })));
 import { DemoModeToggle } from "./DemoModeToggle";
+import { TemaToggle } from "./theme/TemaToggle";
 import { VerComoControle, VerComoTarja } from "./VerComo";
 import { useSessionTracker } from "@/hooks/useSessionTracker";
 import { preloadMaisUsadasQuandoOcioso } from "@/lib/lazyRetry";
@@ -57,6 +58,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             {collapsed ? <PanelLeftOpen className="w-4.5 h-4.5" /> : <PanelLeftClose className="w-4.5 h-4.5" />}
           </button>
           <div className="flex-1" />
+          <TemaToggle />
           <VerComoControle />
           <DemoModeToggle />
           <Suspense fallback={null}><GlobalSearch /></Suspense>

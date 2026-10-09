@@ -215,11 +215,21 @@ Provider + botão no topo do `LayoutErp`, persistido — vale para **todas** as 
 
 **Fase A — Consolidar (verificar + commitar)**
 - [x] Bateria da API verde (105 testes).
-- [ ] Commit/PR na API: membro/setores + contratos/arquivos + docs.
-- [ ] Limpar lixo da raiz do `oliveira-erp` e commitar o front de Tarefas.
+- [x] Commit/PR na API: membro/setores + contratos/arquivos + docs + **storage configurável** — PR [OA-03].
+- [x] Lixo da raiz do `oliveira-erp` removido e front de Tarefas commitado — PR [OE-03].
+
+> **Rotina de git (acordo com o titular):** cada correção aplicada vira commit →
+> **PR nova** → push. Não empilhar correção na PR existente.
+
+**Extra entregue fora do plano original**
+- [x] **Storage configurável** (`com.oliveira.common.storage.ArquivoStorage`): o provedor
+   de arquivos (disco local, Drive online, S3...) passa a ser escolhido por
+   `api.storage.provedor` e a raiz por `api.storage.raiz`; mudou a config e reiniciou a
+   API. O banco guarda só o caminho relativo, então trocar de provedor não migra dado.
 
 **Fase C — API: modelo + vínculos + histórico**
-- [ ] C1. Migração V8 (colunas + índices + DTO/filtro).
+- [ ] C1. Migração V8: `contrato_id`, `data_compromisso`, `prazo_fatal`, `importante`,
+      `lido`, `privada`, `tarefa_futura`, `etapa` + índices + DTO + filtros.
 - [ ] C2. `GET /tarefas/{id}/historico` + estados.
 - [ ] C3. Anexos e interações da tarefa (`arquivos_cliente.tarefa_id`, `tarefa_interacoes`).
 - [ ] C4. Ao criar contrato: 4 tarefas de setor + encaminhar/notificar por setor.

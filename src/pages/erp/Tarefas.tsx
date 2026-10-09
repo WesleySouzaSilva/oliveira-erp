@@ -6,6 +6,7 @@ import {
   AlertTriangle, BarChart3, CheckCircle2, Circle, Clock, Kanban, LayoutList,
   ListChecks, Plus, Save, Search, User, X,
 } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -30,6 +31,9 @@ import { ErroApi, mensagemDeErro, usuarioApi } from "@/lib/api/http";
 import {
   atualizarTarefa, criarTarefa, listarTarefas, type Tarefa,
 } from "@/lib/api/tarefas";
+import { TabelaTarefas } from "@/pages/erp/TarefasLista";
+import { CalendarioTarefas } from "@/pages/erp/TarefasCalendario";
+import { mapaDeNomes } from "@/lib/api/membros";
 
 /**
  * Tarefas — painel "Minhas tarefas" migrado da tela legada `/tarefas`
@@ -49,7 +53,7 @@ import {
 
 const HOJE = new Date().toISOString().split("T")[0];
 
-type Vista = "lista" | "kanban";
+type Vista = "lista" | "calendario" | "kanban";
 
 const COLUNAS_KANBAN = [
   { id: "atrasadas", rotulo: "Atrasadas", tom: "text-destructive" },
@@ -81,6 +85,22 @@ export default function TarefasApi() {
   const [dialogNova, setDialogNova] = useState(false);
   const [tarefaAberta, setTarefaAberta] = useState<Tarefa | null>(null);
   const [arrastandoId, setArrastandoId] = useState<string | null>(null);
+  const [pagina, setPagina] = useState(0);
+  const [porPagina, setPorPagina] = useState(50);
+  /** Dia escolhido no calendario para a nova tarefa com o vencimento ja preenchido. */
+  const [dataPreta, setDataPreta] = useState<string | null>(null);
+  /** userId -> nome, para a coluna "Responsavel" nao virar UUID na tela. */
+  const [nomes, setNomes] = useState<Map<string, string>>(() => new Map());
+
+  useEffect(() => {
+    let vivo = true;
+    mapaDeNomes().then((mapa) => {
+      if (vivo) setNomes(mapa);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, []);
 
   const carregar = useCallback(async (texto: string) => {
     setCarregando(true);
@@ -113,6 +133,7 @@ export default function TarefasApi() {
       return;
     }
     if (timerBusca.current) window.clearTimeout(timerBusca.current);
+    setPagina(0);
     timerBusca.current = window.setTimeout(() => carregar(busca), 300);
     return () => {
       if (timerBusca.current) window.clearTimeout(timerBusca.current);
@@ -134,6 +155,33 @@ export default function TarefasApi() {
       setTarefas((atual) =>
         atual.map((t) => (t.id === tarefa.id ? { ...t, concluida: tarefa.concluida } : t)),
       );
+      toast.error(mensagemDeErro(erro));
+    }
+  }, []);
+
+  /**
+   * Marcadores clicaveis da lista (Advbox): importante, urgente e lido — cada um e um
+   * PATCH proprio, otimista (a tela troca na hora e volta se a API negar).
+   */
+  const marcar = useCallback(async (tarefa: Tarefa, campo: "importante" | "urgente" | "lido", valor: boolean) => {
+    setTarefas((atual) =>
+      atual.map((t) => {
+        if (t.id !== tarefa.id) return t;
+        if (campo === "urgente") return { ...t, prioridade: valor ? "urgente" : "normal" };
+        if (campo === "importante") return { ...t, importante: valor };
+        return { ...t, lido: valor };
+      }),
+    );
+    try {
+      if (campo === "urgente") {
+        await atualizarTarefa(tarefa.id, { prioridade: valor ? "urgente" : "normal" });
+      } else if (campo === "importante") {
+        await atualizarTarefa(tarefa.id, { importante: valor });
+      } else {
+        await atualizarTarefa(tarefa.id, { lido: valor });
+      }
+    } catch (erro) {
+      setTarefas((atual) => atual.map((t) => (t.id === tarefa.id ? tarefa : t)));
       toast.error(mensagemDeErro(erro));
     }
   }, []);
@@ -200,6 +248,9 @@ export default function TarefasApi() {
                 <TabsTrigger value="lista" className="gap-1.5">
                   <LayoutList className="w-3.5 h-3.5" /> Lista
                 </TabsTrigger>
+                <TabsTrigger value="calendario" className="gap-1.5">
+                  <CalendarDays className="w-3.5 h-3.5" /> Calendário
+                </TabsTrigger>
                 <TabsTrigger value="kanban" className="gap-1.5">
                   <Kanban className="w-3.5 h-3.5" /> Kanban
                 </TabsTrigger>
@@ -253,10 +304,28 @@ export default function TarefasApi() {
           }
         />
       ) : vista === "lista" ? (
-        <VisaoLista
-          agrupadas={agrupadas}
-          onAlternar={alternarConcluida}
+        <TabelaTarefas
+          tarefas={tarefas}
+          pagina={pagina}
+          porPagina={porPagina}
+          onPagina={setPagina}
+          onPorPagina={(quantidade) => {
+            setPorPagina(quantidade);
+            setPagina(0);
+          }}
           onAbrir={setTarefaAberta}
+          onAlternar={alternarConcluida}
+          onMarcar={marcar}
+          nomeDeResponsavel={(userId) => nomes.get(userId) || "—"}
+        />
+      ) : vista === "calendario" ? (
+        <CalendarioTarefas
+          tarefas={tarefas}
+          onAbrir={setTarefaAberta}
+          onNova={(data) => {
+            setDataPreta(data);
+            setDialogNova(true);
+          }}
         />
       ) : (
         <VisaoKanban
@@ -294,7 +363,11 @@ export default function TarefasApi() {
 
       <DialogNovaTarefa
         aberto={dialogNova}
-        onFechar={() => setDialogNova(false)}
+        onFechar={() => {
+          setDialogNova(false);
+          setDataPreta(null);
+        }}
+        dataInicial={dataPreta}
         onCriar={async (dados) => {
           try {
             const nova = await criarTarefa(dados);
@@ -313,163 +386,7 @@ export default function TarefasApi() {
   );
 }
 
-/* ------------------------------------------------------------------ lista */
-
-function Secao({
-  titulo, icone, tom, tarefas, onAlternar, onAbrir, concluida,
-}: {
-  titulo: string;
-  icone: React.ReactNode;
-  tom: string;
-  tarefas: Tarefa[];
-  onAlternar: (tarefa: Tarefa, concluida: boolean) => void;
-  onAbrir: (tarefa: Tarefa) => void;
-  concluida?: boolean;
-}) {
-  if (tarefas.length === 0) return null;
-  return (
-    <Card>
-      <div className="px-4 py-3 border-b flex items-center gap-2">
-        {icone}
-        <h3 className={`text-sm font-semibold ${tom}`}>
-          {titulo} ({tarefas.length})
-        </h3>
-      </div>
-      <div className="divide-y">
-        {tarefas.map((tarefa) => (
-          <LinhaTarefa
-            key={tarefa.id}
-            tarefa={tarefa}
-            onAlternar={onAlternar}
-            onAbrir={onAbrir}
-            concluida={concluida}
-          />
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-function LinhaTarefa({
-  tarefa: t, onAlternar, onAbrir, concluida,
-}: {
-  tarefa: Tarefa;
-  onAlternar: (tarefa: Tarefa, concluida: boolean) => void;
-  onAbrir: (tarefa: Tarefa) => void;
-  concluida?: boolean;
-}) {
-  const urgente = t.prioridade === "urgente" && !t.concluida;
-  return (
-    <div
-      className="px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-secondary/40 transition-colors"
-      onClick={() => onAbrir(t)}
-    >
-      <button
-        onClick={(evento) => {
-          evento.stopPropagation();
-          onAlternar(t, !t.concluida);
-        }}
-        className="shrink-0"
-        aria-label={t.concluida ? "Reabrir tarefa" : "Concluir tarefa"}
-      >
-        {t.concluida ? (
-          <CheckCircle2 className="w-4 h-4 text-success" />
-        ) : (
-          <Circle className="w-4 h-4 text-muted-foreground hover:text-accent transition-colors" />
-        )}
-      </button>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p
-            className={`text-sm font-medium truncate ${
-              concluida || t.concluida ? "line-through text-muted-foreground" : "text-foreground"
-            }`}
-          >
-            {t.titulo}
-          </p>
-          {urgente && (
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-destructive/15 text-destructive font-bold shrink-0 uppercase">
-              Urgente
-            </span>
-          )}
-        </div>
-        {t.descricao && (
-          <p className="text-xs text-muted-foreground truncate">{t.descricao}</p>
-        )}
-        {t.nomeCliente && (
-          <p className="text-[10px] text-accent font-medium mt-0.5">
-            Cliente: {t.nomeCliente}
-          </p>
-        )}
-      </div>
-      <span
-        className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${
-          t.concluida
-            ? "bg-success/10 text-success"
-            : t.dataVencimento < HOJE
-            ? "bg-destructive/10 text-destructive"
-            : t.dataVencimento === HOJE
-            ? "bg-[hsl(var(--warning))]/10 text-[hsl(var(--warning-foreground))]"
-            : "bg-secondary text-foreground"
-        }`}
-      >
-        {t.concluida
-          ? "Concluída"
-          : t.dataVencimento < HOJE
-          ? "Atrasada"
-          : t.dataVencimento === HOJE
-          ? "Hoje"
-          : dataBr(t.dataVencimento)}
-      </span>
-    </div>
-  );
-}
-
-function VisaoLista({
-  agrupadas, onAlternar, onAbrir,
-}: {
-  agrupadas: Record<ColunaKanban, Tarefa[]>;
-  onAlternar: (tarefa: Tarefa, concluida: boolean) => void;
-  onAbrir: (tarefa: Tarefa) => void;
-}) {
-  return (
-    <div className="space-y-4">
-      <Secao
-        titulo="Prazo fatal"
-        icone={<AlertTriangle className="w-4 h-4 text-destructive" />}
-        tom="text-destructive"
-        tarefas={agrupadas.atrasadas}
-        onAlternar={onAlternar}
-        onAbrir={onAbrir}
-      />
-      <Secao
-        titulo="Hoje"
-        icone={<Clock className="w-4 h-4 text-[hsl(var(--warning-foreground))]" />}
-        tom="text-[hsl(var(--warning-foreground))]"
-        tarefas={agrupadas.hoje}
-        onAlternar={onAlternar}
-        onAbrir={onAbrir}
-      />
-      <Secao
-        titulo="Próximas"
-        icone={<BarChart3 className="w-4 h-4 text-muted-foreground" />}
-        tom="text-foreground"
-        tarefas={agrupadas.proximas}
-        onAlternar={onAlternar}
-        onAbrir={onAbrir}
-      />
-      <Secao
-        titulo="Concluídas"
-        icone={<CheckCircle2 className="w-4 h-4 text-success" />}
-        tom="text-success"
-        tarefas={agrupadas.concluidas}
-        onAlternar={onAlternar}
-        onAbrir={onAbrir}
-        concluida
-      />
-    </div>
-  );
-}
+/* --------- lista: virou a tabela no padrão ADVBOX (ver TarefasLista.tsx) -------- */
 
 /* ----------------------------------------------------------------- kanban */
 
@@ -722,7 +639,7 @@ function DrawerTarefa({
 /* ---------------------------------------------------------- nova tarefa */
 
 function DialogNovaTarefa({
-  aberto, onFechar, onCriar,
+  aberto, onFechar, onCriar, dataInicial,
 }: {
   aberto: boolean;
   onFechar: () => void;
@@ -733,6 +650,8 @@ function DialogNovaTarefa({
     prioridade?: string;
     nomeCliente?: string;
   }) => Promise<void>;
+  /** Vencimento ja preenchido quando a tarefa nasce pelo calendario. */
+  dataInicial?: string | null;
 }) {
   const [titulo, setTitulo] = useState("");
   const [descricao, setDescricao] = useState("");
@@ -740,6 +659,11 @@ function DialogNovaTarefa({
   const [prioridade, setPrioridade] = useState("normal");
   const [nomeCliente, setNomeCliente] = useState("");
   const [salvando, setSalvando] = useState(false);
+
+  // o dialog fica montado: ao abrir, volta o vencimento para o dia pedido (ou hoje)
+  useEffect(() => {
+    if (aberto) setVencimento(dataInicial ?? HOJE);
+  }, [aberto, dataInicial]);
 
   const limpar = () => {
     setTitulo("");

@@ -14,13 +14,29 @@ export interface Tarefa {
   id: string;
   organizacaoId?: string | null;
   processoId?: string | null;
+  /** Contrato do cliente a que a tarefa pertence (o contrato e o continente da timeline). */
+  contratoId?: string | null;
   fase?: string | null;
+  /** Alteracao de etapa processual (texto livre ate o modulo processo existir). */
+  etapa?: string | null;
   responsavelId: string;
   titulo: string;
   descricao?: string | null;
   /** `yyyy-MM-dd` (o DTO devolve `LocalDate`). */
   dataVencimento: string;
+  /** Data + hora do compromisso (a coluna "Data compromisso" do ADVBOX). */
+  dataCompromisso?: string | null;
+  /** Prazo limite (a coluna "Prazo fatal"); ausente = vale `dataVencimento`. */
+  prazoFatal?: string | null;
   concluida: boolean;
+  /** Coluna "Importante" (estrela). */
+  importante: boolean;
+  /** Coluna "Lido" (o "lens"). */
+  lido: boolean;
+  /** Cadeado do formulario ("tarefa privada"). */
+  privada: boolean;
+  /** "Tarefa futura": criada agora para valer depois. */
+  tarefaFutura: boolean;
   prioridade: "normal" | "urgente" | string;
   nomeCliente?: string | null;
   createdBy?: string | null;
@@ -32,10 +48,20 @@ export interface TarefaNova {
   titulo: string;
   descricao?: string | null;
   dataVencimento: string;
+  /** Data + hora do compromisso (ISO-8601). */
+  dataCompromisso?: string | null;
+  prazoFatal?: string | null;
   responsavelId?: string | null;
   processoId?: string | null;
+  contratoId?: string | null;
   fase?: string | null;
+  etapa?: string | null;
   prioridade?: string | null;
+  /** Nulo = falso (mesmo comportamento da API). */
+  importante?: boolean | null;
+  lido?: boolean | null;
+  privada?: boolean | null;
+  tarefaFutura?: boolean | null;
   nomeCliente?: string | null;
 }
 
@@ -44,9 +70,19 @@ export interface TarefaAtualizacao {
   titulo?: string;
   descricao?: string;
   dataVencimento?: string;
+  dataCompromisso?: string;
+  prazoFatal?: string;
   responsavelId?: string;
+  processoId?: string;
+  contratoId?: string;
+  etapa?: string;
   prioridade?: string;
   concluida?: boolean;
+  /** Marcadores da lista: `true`/`false` troca, omitido não muda. */
+  importante?: boolean;
+  lido?: boolean;
+  privada?: boolean;
+  tarefaFutura?: boolean;
 }
 
 export interface FiltroTarefas {

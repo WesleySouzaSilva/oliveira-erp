@@ -107,13 +107,16 @@ function limparSessao(): void {
  */
 async function chamada<T>(
   caminho: string,
-  opcoes: { method?: "GET" | "POST" | "PUT" | "DELETE"; body?: unknown; params?: Record<string, string | number | null | undefined> } = {},
+  opcoes: { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; params?: Record<string, string | number | null | undefined> } = {},
 ): Promise<T> {
   const { method = "GET", body, params } = opcoes;
   const token = tokenApi();
 
   const cabecalhos: Record<string, string> = {};
-  if (body !== undefined) cabecalhos["Content-Type"] = "application/json";
+  // FormData (upload multipart): o navegador monta o Content-Type com o boundary —
+  // setar aqui quebra o parse do Spring.
+  const ehFormData = typeof FormData !== "undefined" && body instanceof FormData;
+  if (body !== undefined && !ehFormData) cabecalhos["Content-Type"] = "application/json";
   if (token) cabecalhos["Authorization"] = `Bearer ${token}`;
 
   const controle = new AbortController();
@@ -124,7 +127,7 @@ async function chamada<T>(
     resposta = await fetch(apiUrl(caminho, params), {
       method,
       headers: cabecalhos,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : ehFormData ? (body as FormData) : JSON.stringify(body),
       signal: controle.signal,
       // cookie httpOnly da refresh token: precisa de credenciais cross-origin (localhost:5173 -> 8080)
       credentials: "include",
@@ -168,7 +171,7 @@ async function chamada<T>(
  */
 export async function apiFetch<T>(
   caminho: string,
-  opcoes: { method?: "GET" | "POST" | "PUT" | "DELETE"; body?: unknown; params?: Record<string, string | number | null | undefined> } = {},
+  opcoes: { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; params?: Record<string, string | number | null | undefined> } = {},
 ): Promise<T> {
   try {
     return await chamada<T>(caminho, opcoes);

@@ -16,6 +16,7 @@ const LayoutErp = lazyRetry(() => import("./components/erp/LayoutErp"));
 const EntrarApi = lazyRetry(() => import("./pages/erp/Entrar"));
 const ClientesApi = lazyRetry(() => import("./pages/erp/Clientes"));
 const HomeErp = lazyRetry(() => import("./pages/erp/Home"));
+const TarefasApi = lazyRetry(() => import("./pages/erp/Tarefas"));
 // Páginas de entrada também sob demanda: tiram as animações do pacote inicial
 const Auth = lazyRetry(() => import("./pages/Auth"));
 const PortalLogin = lazyRetry(() => import("./pages/PortalLogin"));
@@ -196,6 +197,7 @@ registrarRotas({
   "/erp": HomeErp,
   "/erp/entrar": EntrarApi,
   "/erp/clientes": ClientesApi,
+  "/erp/tarefas": TarefasApi,
   "/feed": Feed,
   "/rh": GestaoRH,
   "/comercial": GestaoComercial,
@@ -274,6 +276,7 @@ const App = () => (
             <Route path="/erp" element={<LayoutErp />}>
               <Route index element={<HomeErp />} />
               <Route path="clientes" element={<ClientesApi />} />
+              <Route path="tarefas" element={<TarefasApi />} />
             </Route>
             <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
             {/* /gestao consolidado no Dashboard (bloco "Visão Gestor") — preserva bookmarks */}

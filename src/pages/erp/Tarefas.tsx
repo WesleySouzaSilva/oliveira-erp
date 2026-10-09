@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { ErroApi, mensagemDeErro, usuarioApi } from "@/lib/api/http";
 import {
-  atualizarTarefa, criarTarefa, listarTarefas, type Tarefa,
+  atualizarTarefa, criarTarefa, listarTarefas, prazoDaTarefa, type Tarefa,
 } from "@/lib/api/tarefas";
 import { TabelaTarefas } from "@/pages/erp/TarefasLista";
 import { CalendarioTarefas } from "@/pages/erp/TarefasCalendario";
@@ -41,8 +41,9 @@ import { ClienteBusca, type ClienteEscolhido } from "@/components/erp/ClienteBus
  * Tarefas — painel "Minhas tarefas" migrado da tela legada `/tarefas`
  * (`fonts-lovable/src/pages/Tarefas.tsx`), em duas visões:
  *
- * - **Lista**: seções Prazo fatal / Hoje / Próximas / Concluídas, com toggle de
- *   conclusão, badge "Urgente" e detalhe em drawer (mesmo agrupamento do legado);
+ * - **Lista**: tabela no padrão ADVBOX com os quatro marcadores; no topo, os KPIs e o
+ *   calendario de 270px (`.col-md-small-fixed` do original) — clicar num dia filtra a
+ *   tabela embaixo do card, como o `type:"selector"` do plugin do ADVBOX;
  * - **Kanban**: as mesmas quatro colunas em quadro com arrastar-e-soltar — soltar
  *   em "Concluídas" conclui; soltar em uma coluna de prazo reagenda a tarefa
  *   (Ontem / Hoje / +7 dias).
@@ -55,7 +56,7 @@ import { ClienteBusca, type ClienteEscolhido } from "@/components/erp/ClienteBus
 
 const HOJE = new Date().toISOString().split("T")[0];
 
-type Vista = "lista" | "calendario" | "kanban";
+type Vista = "lista" | "kanban";
 
 const COLUNAS_KANBAN = [
   { id: "atrasadas", rotulo: "Atrasadas", tom: "text-destructive" },
@@ -85,6 +86,8 @@ export default function TarefasApi() {
   const [busca, setBusca] = useState("");
   const [vista, setVista] = useState<Vista>("lista");
   const [semMaisPaginas, setSemMaisPaginas] = useState(true);
+  /** Dia clicado no calendario: filtra a tabela da aba Lista (null = todas). */
+  const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null);
 
   const [dialogNova, setDialogNova] = useState(false);
   const [tarefaAberta, setTarefaAberta] = useState<Tarefa | null>(null);
@@ -248,6 +251,22 @@ export default function TarefasApi() {
     };
   }, [tarefas, hoje0]);
 
+  /**
+   * Recorte da tabela pelo dia escolhido no calendario — mesma regra de data do badge
+   * (prazo fatal, ou vencimento quando nao ha prazo), para o numero do dia e as linhas
+   * de baixo sempre baterem.
+   */
+  const tarefasDaLista = useMemo(
+    () =>
+      diaSelecionado
+        ? tarefas.filter((tarefa) => prazoDaTarefa(tarefa) === diaSelecionado)
+        : tarefas,
+    [tarefas, diaSelecionado],
+  );
+
+  // Trocar o dia zera a pagina da tabela.
+  useEffect(() => setPagina(0), [diaSelecionado]);
+
   const temAlgo = tarefas.length > 0;
 
   return (
@@ -264,16 +283,17 @@ export default function TarefasApi() {
                 <TabsTrigger value="lista" className="gap-1.5">
                   <LayoutList className="w-3.5 h-3.5" /> Lista
                 </TabsTrigger>
-                <TabsTrigger value="calendario" className="gap-1.5">
-                  <CalendarDays className="w-3.5 h-3.5" /> Calendário
-                </TabsTrigger>
                 <TabsTrigger value="kanban" className="gap-1.5">
                   <Kanban className="w-3.5 h-3.5" /> Kanban
                 </TabsTrigger>
               </TabsList>
             </Tabs>
             <button
-              onClick={() => setDialogNova(true)}
+              onClick={() => {
+                // Com um dia escolhido no calendario, a nova tarefa ja nasce nele.
+                setDataPreta(diaSelecionado);
+                setDialogNova(true);
+              }}
               className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-accent text-accent-foreground hover:shadow-card-hover transition-all"
             >
               <Plus className="w-4 h-4" /> Nova tarefa
@@ -294,22 +314,94 @@ export default function TarefasApi() {
         />
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Total" value={tarefas.length} icon={BarChart3} />
-        <KpiCard
-          label="Pendentes"
-          value={agrupadas.atrasadas.length + agrupadas.hoje.length + agrupadas.proximas.length}
-          icon={Clock}
-          tone="info"
-        />
-        <KpiCard label="Atrasadas" value={agrupadas.atrasadas.length} icon={AlertTriangle} tone="danger" />
-        <KpiCard label="Concluídas" value={agrupadas.concluidas.length} icon={CheckCircle2} tone="success" />
+      {/* KPIs (esquerda, 2 colunas x 2 linhas) + calendario maior no canto — so na aba Lista */}
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start">
+        <div className="grid grid-cols-2 gap-3">
+          <KpiCard label="Total" value={tarefas.length} icon={BarChart3} className="p-4" />
+          <KpiCard
+            label="Pendentes"
+            value={agrupadas.atrasadas.length + agrupadas.hoje.length + agrupadas.proximas.length}
+            icon={Clock}
+            tone="info"
+            className="p-4"
+          />
+          <KpiCard label="Atrasadas" value={agrupadas.atrasadas.length} icon={AlertTriangle} tone="danger" className="p-4" />
+          <KpiCard label="Concluídas" value={agrupadas.concluidas.length} icon={CheckCircle2} tone="success" className="p-4" />
+        </div>
+
+        {vista === "lista" && (
+          <CalendarioTarefas
+            tarefas={tarefas}
+            diaSelecionado={diaSelecionado}
+            onSelecionar={setDiaSelecionado}
+            className="w-full max-w-[380px] mx-auto lg:mx-0"
+          />
+        )}
       </div>
+
+      {/* Filtro do dia escolhido no calendario */}
+      {vista === "lista" && diaSelecionado && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-secondary font-medium text-foreground">
+            <CalendarDays className="w-3.5 h-3.5" />
+            Tarefas de {dataBr(diaSelecionado)}
+            <span className="text-muted-foreground">({tarefasDaLista.length})</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setDiaSelecionado(null)}
+            className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="w-3.5 h-3.5" /> Limpar (ver todas)
+          </button>
+        </div>
+      )}
 
       {carregando ? (
         <ListSkeleton rows={6} />
-      ) : !temAlgo ? (
+      ) : vista === "lista" ? (
+        tarefasDaLista.length > 0 ? (
+          <TabelaTarefas
+            tarefas={tarefasDaLista}
+            pagina={pagina}
+            porPagina={porPagina}
+            onPagina={setPagina}
+            onPorPagina={(quantidade) => {
+              setPorPagina(quantidade);
+              setPagina(0);
+            }}
+            onAbrir={setTarefaAberta}
+            onAlternar={alternarConcluida}
+            onMarcar={marcar}
+            nomeDeResponsavel={(userId) => nomes.get(userId) || "—"}
+          />
+        ) : diaSelecionado ? (
+          <EmptyState
+            icon={CalendarDays}
+            title="Nenhuma tarefa neste dia"
+            description={`Nenhuma tarefa com prazo em ${dataBr(diaSelecionado)}. Escolha outro dia ou limpe o filtro.`}
+          />
+        ) : (
+          <EmptyState
+            icon={ListChecks}
+            title={busca ? "Nada encontrado" : "Nenhuma tarefa ainda"}
+            description={
+              busca
+                ? "Nenhuma tarefa corresponde à busca."
+                : "Cadastre um cliente ou crie uma tarefa manual para começar."
+            }
+          />
+        )
+      ) : temAlgo ? (
+        <VisaoKanban
+          agrupadas={agrupadas}
+          arrastandoId={arrastandoId}
+          onArrastar={setArrastandoId}
+          onSoltar={soltar}
+          onAbrir={setTarefaAberta}
+          onAlternar={alternarConcluida}
+        />
+      ) : (
         <EmptyState
           icon={ListChecks}
           title={busca ? "Nada encontrado" : "Nenhuma tarefa ainda"}
@@ -318,39 +410,6 @@ export default function TarefasApi() {
               ? "Nenhuma tarefa corresponde à busca."
               : "Cadastre um cliente ou crie uma tarefa manual para começar."
           }
-        />
-      ) : vista === "lista" ? (
-        <TabelaTarefas
-          tarefas={tarefas}
-          pagina={pagina}
-          porPagina={porPagina}
-          onPagina={setPagina}
-          onPorPagina={(quantidade) => {
-            setPorPagina(quantidade);
-            setPagina(0);
-          }}
-          onAbrir={setTarefaAberta}
-          onAlternar={alternarConcluida}
-          onMarcar={marcar}
-          nomeDeResponsavel={(userId) => nomes.get(userId) || "—"}
-        />
-      ) : vista === "calendario" ? (
-        <CalendarioTarefas
-          tarefas={tarefas}
-          onAbrir={setTarefaAberta}
-          onNova={(data) => {
-            setDataPreta(data);
-            setDialogNova(true);
-          }}
-        />
-      ) : (
-        <VisaoKanban
-          agrupadas={agrupadas}
-          arrastandoId={arrastandoId}
-          onArrastar={setArrastandoId}
-          onSoltar={soltar}
-          onAbrir={setTarefaAberta}
-          onAlternar={alternarConcluida}
         />
       )}
 

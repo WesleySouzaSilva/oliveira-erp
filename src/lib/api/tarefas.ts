@@ -65,6 +65,13 @@ export interface TarefaNova {
   nomeCliente?: string | null;
 }
 
+/**
+ * Data que marca a tarefa no dia: prazo fatal, ou o vencimento quando não há prazo —
+ * a mesma regra da coluna "Prazo fatal" da lista e dos badges do calendário, para o
+ * número do dia e as linhas filtradas sempre baterem.
+ */
+export const prazoDaTarefa = (tarefa: Tarefa) => tarefa.prazoFatal ?? tarefa.dataVencimento;
+
 /** PATCH: campos ausentes não mudam (contrato da API). */
 export interface TarefaAtualizacao {
   titulo?: string;

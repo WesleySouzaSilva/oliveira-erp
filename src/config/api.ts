@@ -9,7 +9,21 @@
  * definir `VITE_API_URL=/api/v1` — ver `oliveira-api/docs/COMO-RODAR.md`.
  */
 
-const URL_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8080/api/v1";
+/**
+ * URL base da API, sem barra no final (ex.: `http://localhost:8080/api/v1`).
+ *
+ * Sem `VITE_API_URL`, a API é procurada no MESMO host que serviu o front — assim o mesmo
+ * código vale no desktop (`localhost:8080`) e no celular pela rede local
+ * (`http://192.168.x.x:5173` → API em `http://192.168.x.x:8080`), desde que a API esteja na
+ * mesma máquina. Para API em outra máquina/domínio, defina `VITE_API_URL` no `.env`; em
+ * produção use o caminho relativo do proxy (ex.: `/api/v1`), que não passa por aqui.
+ */
+function urlPadraoDaApi(): string {
+  const host = typeof window !== "undefined" ? window.location.hostname : "";
+  return `http://${host || "localhost"}:8080/api/v1`;
+}
+
+const URL_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? urlPadraoDaApi();
 
 /** URL base da API, sem barra no final (ex.: `http://localhost:8080/api/v1`). */
 export const API_BASE_URL = URL_BASE.replace(/\/+$/, "");

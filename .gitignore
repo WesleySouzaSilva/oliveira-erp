@@ -25,6 +25,11 @@ test-results/
 Thumbs.db
 *~
 
+# ---- Scripts operacionais do PC (cadastro, deploy) ----
+# Ficam so' nesta maquina: contem IP do servidor e fluxo de cadastro.
+# Ver deploy/README quando houver.
+deploy/
+
 # ---- Exemplos do ADVBOX (docs/exemplo-*.html) ----
 # Páginas salvas do sistema legado contendo dados reais de clientes (CPF, bancos,
 # processos) — ficam so na maquina local; o plano delas esta em docs/plano-tarefas.md.

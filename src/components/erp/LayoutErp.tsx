@@ -1,7 +1,7 @@
 import { NavLink, Navigate, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  Building2, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Users, X,
+  Building2, FolderTree, Layers, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Users, X,
 } from "lucide-react";
 import { autenticadoApi, buscarUsuarioAtual, logoutApi, usuarioApi, type UsuarioApi } from "@/lib/api/http";
 import { Button } from "@/components/ui/button";
@@ -153,6 +153,17 @@ export default function LayoutErp() {
         <nav className="flex-1 p-3 space-y-1">
           {itemMenu(<ListChecks className="w-4 h-4" />, "Tarefas", "/erp/tarefas")}
           {itemMenu(<Users className="w-4 h-4" />, "Clientes", "/erp/clientes")}
+          {(usuario?.admin || usuario?.ceo) && (
+            <>
+              <p
+                className={`px-3 pt-4 pb-1 text-[11px] font-semibold uppercase text-muted-foreground tracking-wide ${recolhido ? "lg:hidden" : ""}`}
+              >
+                Cadastro
+              </p>
+              {itemMenu(<FolderTree className="w-4 h-4" />, "Objetos", "/erp/objetos")}
+              {itemMenu(<Layers className="w-4 h-4" />, "Sub-Categoria / Objeto", "/erp/sub-objetos")}
+            </>
+          )}
         </nav>
 
         <div className={`p-3 border-t space-y-2 ${recolhido ? "lg:px-2" : ""}`}>

@@ -25,6 +25,9 @@ export interface UsuarioApi {
   organizacaoId?: string;
   perfis?: string[];
   permissoes?: string[];
+  /** CEO e admin vêm do `/auth/me` (e do login) — usados para esconder menus de gestão. */
+  ceo?: boolean;
+  admin?: boolean;
 }
 
 /** Erro de domínio vindo da API (ou falha de rede, com `status = 0`). */

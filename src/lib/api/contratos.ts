@@ -23,6 +23,12 @@ export interface Contrato {
   /** Vazia = o contrato e "so registro", sem controle de prazo. */
   dataValidade?: string | null;
   observacoes?: string | null;
+  /** Valor do contrato (opcional). */
+  valor?: number | null;
+  /** `yyyy-MM-dd` — preenchida AUTATICAMENTE no cadastro (o servidor grava). */
+  dataAbertura?: string | null;
+  /** Tipo de objeto (categoria, ex.: "Arroz") — FK para /tipo-objeto. */
+  objetoId?: string | null;
   createdBy?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -36,6 +42,8 @@ export interface ContratoNovo {
   dataInicio?: string | null;
   dataValidade?: string | null;
   observacoes?: string | null;
+  valor?: number | null;
+  objetoId?: string | null;
 }
 
 /** PATCH: campos ausentes nao mudam (contrato da API). */
@@ -47,6 +55,8 @@ export interface ContratoAtualizacao {
   dataInicio?: string;
   dataValidade?: string;
   observacoes?: string;
+  valor?: number;
+  objetoId?: string;
 }
 
 export interface Arquivo {

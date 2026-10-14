@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ListChecks, Pencil, Save, Search, Trash2, UserPlus, Users } from "lucide-react";
+import { FileSignature, ListChecks, Pencil, Save, Search, Trash2, UserPlus, Users } from "lucide-react";
+import { ContratosClienteDialog } from "@/components/erp/ContratosClienteDialog";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -154,6 +155,9 @@ export default function Clientes() {
 
   const [dialogAberto, setDialogAberto] = useState(false);
   const [editando, setEditando] = useState<Cliente | null>(null);
+  /** Cliente cujos contratos estão abertos no dialog (e se o form de novo já abre). */
+  const [contratosDe, setContratosDe] = useState<Cliente | null>(null);
+  const [formContratoAberto, setFormContratoAberto] = useState(false);
   const [form, setForm] = useState<Formulario>(FORM_VAZIO);
   const [salvando, setSalvando] = useState(false);
 
@@ -249,7 +253,11 @@ export default function Clientes() {
     setDialogAberto(true);
   };
 
-  const salvar = async (evento: React.FormEvent) => {
+  /**
+   * Salva o cliente. Com `gerarContrato` (botão "Salvar e gerar contrato"), fecha o
+   * cadastro e abre o formulário de contrato do cliente recém-salvo.
+   */
+  const salvar = async (evento: React.FormEvent | React.MouseEvent, gerarContrato = false) => {
     evento.preventDefault();
     if (!form.nome.trim()) {
       toast.error("Informe o nome do cliente");
@@ -263,15 +271,20 @@ export default function Clientes() {
     setSalvando(true);
     try {
       const dados = paraDto(form);
+      let clienteSalvo: Cliente | null = null;
       if (editando) {
-        await atualizarCliente(editando.id, dados);
+        clienteSalvo = await atualizarCliente(editando.id, dados);
         toast.success("Cliente atualizado");
       } else {
-        await criarCliente(dados);
+        clienteSalvo = await criarCliente(dados);
         toast.success("Cliente cadastrado");
       }
       setDialogAberto(false);
       await carregar(busca, numeroPagina);
+      if (gerarContrato && clienteSalvo) {
+        setContratosDe(clienteSalvo);
+        setFormContratoAberto(true);
+      }
     } catch (erro) {
       const campos = erro instanceof ErroApi && erro.campos.length > 0 ? erro.campos : null;
       toast.error(campos ? `${campos[0].nome}: ${campos[0].mensagem}` : mensagemDeErro(erro));
@@ -379,6 +392,16 @@ export default function Clientes() {
                           }
                         >
                           <ListChecks className="w-4 h-4 mr-1" /> Nova tarefa
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setContratosDe(cliente);
+                            setFormContratoAberto(false);
+                          }}
+                        >
+                          <FileSignature className="w-4 h-4 mr-1" /> Contratos
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => abrirEdicao(cliente)}>
                           <Pencil className="w-4 h-4 mr-1" /> Editar
@@ -567,10 +590,21 @@ export default function Clientes() {
               </div>
             </section>
 
-            <DialogFooter>
+            <DialogFooter className="flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => setDialogAberto(false)}>
                 Cancelar
               </Button>
+              {!editando && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={salvando}
+                  onClick={(evento) => salvar(evento, true)}
+                >
+                  <FileSignature className="w-4 h-4 mr-1" />
+                  Salvar e gerar contrato
+                </Button>
+              )}
               <button
                 type="submit"
                 disabled={salvando}
@@ -583,6 +617,19 @@ export default function Clientes() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {contratosDe && (
+        <ContratosClienteDialog
+          aberto={true}
+          onAbertoChange={(aberto) => {
+            if (!aberto) setContratosDe(null);
+          }}
+          clienteId={contratosDe.id}
+          clienteNome={contratosDe.nome}
+          iniciandoComFormulario={formContratoAberto}
+          onContratoCriado={() => void carregar(busca, numeroPagina)}
+        />
+      )}
     </div>
   );
 }

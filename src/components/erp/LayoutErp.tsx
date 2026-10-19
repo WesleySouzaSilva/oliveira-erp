@@ -1,9 +1,10 @@
 import { NavLink, Navigate, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  Building2, FolderTree, Layers, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Users, X,
+  Briefcase, Building2, FileSignature, FolderTree, KeyRound, Layers, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ScrollText, ShieldCheck, UserCog, Users, Waypoints, X,
 } from "lucide-react";
 import { autenticadoApi, buscarUsuarioAtual, logoutApi, usuarioApi, type UsuarioApi } from "@/lib/api/http";
+import { useNotificacoes } from "@/hooks/useNotificacoes";
 import { Button } from "@/components/ui/button";
 import { TemaToggle } from "@/components/theme/TemaToggle";
 
@@ -25,6 +26,8 @@ const CHAVE_MENU_RECOLHIDO = "oliveira:menu-recolhido";
 const SUPABASE_CONFIGURADO = Boolean(import.meta.env.VITE_SUPABASE_URL);
 
 export default function LayoutErp() {
+  /** Sino de notificações de tarefa (mesmo contador da tela de Tarefas). */
+  const sino = useNotificacoes();
   const navigate = useNavigate();
   const [usuario, setUsuario] = useState<UsuarioApi | null>(() => usuarioApi());
   /** Barra recolhida no desktop (só ícones). */
@@ -52,6 +55,10 @@ export default function LayoutErp() {
     return () => media.removeEventListener("change", fechar);
   }, []);
 
+  // Clientes (Base), Contratos Clientes e seus detalhes são de LEITURA para TODOS os
+  // usuários da plataforma (decisão do titular, 15/10/2026) — quem vê quais contratos é
+  // recorte da API; criar/editar continua exigindo o módulo clientes (ou admin/ceo).
+
   if (!autenticadoApi()) {
     return <Navigate to="/erp/entrar" replace />;
   }
@@ -69,7 +76,7 @@ export default function LayoutErp() {
   };
 
   /** Link do menu: ícone sempre; rótulo some quando a barra está recolhida. */
-  const itemMenu = (icone: ReactNode, rotulo: string, destino: string) => (
+  const itemMenu = (icone: ReactNode, rotulo: string, destino: string, selo?: ReactNode) => (
     <NavLink
       to={destino}
       onClick={() => setGavetaAberta(false)}
@@ -80,7 +87,10 @@ export default function LayoutErp() {
         } ${recolhido ? "lg:justify-center lg:px-0" : ""}`
       }
     >
-      {icone}
+      <span className="relative inline-flex">
+        {icone}
+        {selo}
+      </span>
       <span className={recolhido ? "lg:hidden" : ""}>{rotulo}</span>
     </NavLink>
   );
@@ -151,8 +161,50 @@ export default function LayoutErp() {
         </div>
 
         <nav className="flex-1 p-3 space-y-1">
-          {itemMenu(<ListChecks className="w-4 h-4" />, "Tarefas", "/erp/tarefas")}
-          {itemMenu(<Users className="w-4 h-4" />, "Clientes", "/erp/clientes")}
+          {/* Sino de notificações no menu Tarefas: some quando a pessoa ABRE a tarefa */}
+          {itemMenu(
+            <ListChecks className="w-4 h-4" />,
+            "Tarefas",
+            "/erp/tarefas",
+            sino.naoLidas > 0 ? (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold grid place-items-center">
+                {sino.naoLidas > 99 ? "99+" : sino.naoLidas}
+              </span>
+            ) : undefined,
+          )}
+          {/* Grupo Clientes (decisão 1 do plano de contratos): Base + Contratos Clientes */}
+          <p
+            className={`px-3 pt-4 pb-1 text-[11px] font-semibold uppercase text-muted-foreground tracking-wide ${recolhido ? "lg:hidden" : ""}`}
+          >
+            Clientes
+          </p>
+          {itemMenu(<Users className="w-4 h-4" />, "Base", "/erp/clientes")}
+          {itemMenu(
+            <FileSignature className="w-4 h-4" />,
+            "Contratos Clientes",
+            "/erp/contratos",
+          )}
+          {/* Ferramentas: códigos dos tribunais — leitura para TODOS (a gestão
+              (cadastrar/remover/histórico) é só admin, barrada pela API) */}
+          <p
+            className={`px-3 pt-4 pb-1 text-[11px] font-semibold uppercase text-muted-foreground tracking-wide ${recolhido ? "lg:hidden" : ""}`}
+          >
+            Ferramentas
+          </p>
+          {itemMenu(
+            <KeyRound className="w-4 h-4" />,
+            "Códigos dos tribunais",
+            "/erp/codigos-tribunais",
+          )}
+          {/* Pessoas e permissões: SÓ o administrador (decisão do titular 16/10/2026) —
+              é ele quem cadastra usuário, atribui permissão e acompanha a auditoria */}
+          {usuario?.admin && (
+            <>
+              {itemMenu(<UserCog className="w-4 h-4" />, "Usuários", "/erp/usuarios")}
+              {itemMenu(<ShieldCheck className="w-4 h-4" />, "Permissões", "/erp/permissoes")}
+              {itemMenu(<ScrollText className="w-4 h-4" />, "Auditoria", "/erp/auditoria")}
+            </>
+          )}
           {(usuario?.admin || usuario?.ceo) && (
             <>
               <p
@@ -162,6 +214,8 @@ export default function LayoutErp() {
               </p>
               {itemMenu(<FolderTree className="w-4 h-4" />, "Objetos", "/erp/objetos")}
               {itemMenu(<Layers className="w-4 h-4" />, "Sub-Categoria / Objeto", "/erp/sub-objetos")}
+              {itemMenu(<Waypoints className="w-4 h-4" />, "Setores", "/erp/setores")}
+              {itemMenu(<Briefcase className="w-4 h-4" />, "Funções", "/erp/funcoes")}
             </>
           )}
         </nav>

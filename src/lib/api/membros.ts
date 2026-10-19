@@ -7,6 +7,10 @@ import { apiFetch } from "@/lib/api/http";
  * nome na coluna "Responsavel" da lista de tarefas, para o select de encaminhar e para
  * a visao de equipe. Os campos casam com `MembroDTO`.
  */
+/**
+ * Vínculo de setor do colaborador (vem embutido em `MembroDTO.setores`). O cadastro
+ * inteiro de setores (listar + criar/editar/excluir) mora em `@/lib/api/setores`.
+ */
 export interface Setor {
   id: string;
   nome: string;

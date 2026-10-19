@@ -4,7 +4,7 @@ import { ptBR } from "date-fns/locale";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
-  AlertTriangle, BarChart3, CheckCircle2, Circle, Clock, Kanban, LayoutList,
+  AlertTriangle, BarChart3, Bell, CheckCircle2, Clock, Kanban, LayoutList,
   ListChecks, Plus, Save, Search, User, X,
 } from "lucide-react";
 import { CalendarDays } from "lucide-react";
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ListSkeleton } from "@/components/ui/loaders";
 import { EmptyState } from "@/components/ui/empty-state";
 import { KpiCard } from "@/components/ui/kpi-card";
@@ -23,19 +24,25 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
-} from "@/components/ui/sheet";
-import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { ErroApi, mensagemDeErro, usuarioApi } from "@/lib/api/http";
 import {
-  atualizarTarefa, criarTarefa, listarTarefas, prazoDaTarefa, type Tarefa,
+  atualizarTarefa, criarTarefa, listarHistoricoTarefa, listarTarefas, prazoDaTarefa, type Tarefa,
 } from "@/lib/api/tarefas";
+import { buscarContrato } from "@/lib/api/contratos";
 import { TabelaTarefas } from "@/pages/erp/TarefasLista";
+import { corDePrioridade } from "@/lib/prioridade";
 import { CalendarioTarefas } from "@/pages/erp/TarefasCalendario";
-import { mapaDeNomes } from "@/lib/api/membros";
+import { EncaminharTarefa, TarefaTimeline } from "@/components/erp/TarefaMovimentacao";
+import { mapaDeNomes, listarMembros, type Membro } from "@/lib/api/membros";
+import { listarSetores, type Setor } from "@/lib/api/setores";
 import { ClienteBusca, type ClienteEscolhido } from "@/components/erp/ClienteBusca";
+import {
+  aoAbrirTarefa,
+  recarregarNotificacoes,
+  useNotificacoes,
+} from "@/hooks/useNotificacoes";
 
 /**
  * Tarefas — painel "Minhas tarefas" migrado da tela legada `/tarefas`
@@ -55,6 +62,20 @@ import { ClienteBusca, type ClienteEscolhido } from "@/components/erp/ClienteBus
  */
 
 const HOJE = new Date().toISOString().split("T")[0];
+
+/**
+ * Prioridade é SELECT, não texto (pedido do titular 16/10/2026): Normal, Alta e Urgente.
+ * Os valores gravados são as chaves — o legado usava "normal"/"urgente", que continuam
+ * válidos; tarefas antigas com outro texto caem em "normal" na edição.
+ */
+const PRIORIDADES = [
+  { valor: "normal", rotulo: "Normal" },
+  { valor: "alta", rotulo: "Alta" },
+  { valor: "urgente", rotulo: "Urgente" },
+];
+
+const prioridadeValida = (valor?: string | null) =>
+  PRIORIDADES.some((item) => item.valor === valor) ? (valor as string) : "normal";
 
 type Vista = "lista" | "kanban";
 
@@ -79,6 +100,8 @@ function statusDaTarefa(t: Tarefa): ColunaKanban {
 
 export default function TarefasApi() {
   const usuario = usuarioApi();
+  /** Sino (store único com o menu): total de não lidas + as que ainda não foram vistas. */
+  const { naoLidas, novas } = useNotificacoes();
   const location = useLocation();
   const navigate = useNavigate();
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
@@ -91,6 +114,8 @@ export default function TarefasApi() {
 
   const [dialogNova, setDialogNova] = useState(false);
   const [tarefaAberta, setTarefaAberta] = useState<Tarefa | null>(null);
+  /** Timeline aberta na janela central grande (botão "Histórico" da lista). */
+  const [tarefaHistorico, setTarefaHistorico] = useState<Tarefa | null>(null);
   const [arrastandoId, setArrastandoId] = useState<string | null>(null);
   const [pagina, setPagina] = useState(0);
   const [porPagina, setPorPagina] = useState(50);
@@ -110,6 +135,48 @@ export default function TarefasApi() {
   }, [clienteVindo, location.pathname, navigate]);
   /** userId -> nome, para a coluna "Responsavel" nao virar UUID na tela. */
   const [nomes, setNomes] = useState<Map<string, string>>(() => new Map());
+
+  /**
+   * Abrir uma tarefa (lista, kanban ou notificação): é a LEITURA dela — só aqui a
+   * notificação some do sininho (decisão do titular 16/10/2026).
+   */
+  const abrirTarefa = useCallback((tarefa: Tarefa) => {
+    aoAbrirTarefa(tarefa.id);
+    setTarefaAberta(tarefa);
+  }, []);
+
+  /** Card de alerta "você recebeu uma tarefa de X" (mesmo estilo dos avisos do sistema). */
+  useEffect(() => {
+    novas.forEach((notificacao) => {
+      toast(`Você recebeu uma tarefa de ${notificacao.deUsuarioNome || "outro usuário"}`, {
+        description: notificacao.tarefaTitulo ?? undefined,
+        duration: 20000,
+        action: {
+          label: "Abrir",
+          onClick: () => void abrirNotificacao(notificacao.tarefaId),
+        },
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [novas]);
+
+  /** Sino clicado: abre a tarefa mais antiga ainda não vista (ou avisa que não há). */
+  const abrirNotificacao = useCallback(async (tarefaId: string) => {
+    const tarefa = tarefas.find((t) => t.id === tarefaId);
+    if (tarefa) {
+      abrirTarefa(tarefa);
+      return;
+    }
+    try {
+      const resultado = await listarTarefas({ minhas: true, page: 0, size: 200 });
+      setTarefas(resultado.content);
+      const achada = resultado.content.find((t) => t.id === tarefaId);
+      if (achada) abrirTarefa(achada);
+      else toast.error("Esta tarefa não está na sua lista.");
+    } catch (erro) {
+      toast.error(mensagemDeErro(erro));
+    }
+  }, [abrirTarefa, tarefas]);
 
   useEffect(() => {
     let vivo = true;
@@ -159,7 +226,17 @@ export default function TarefasApi() {
     };
   }, [busca, carregar]);
 
+  /**
+   * Conclusão só pelo Status (decisão do titular 16/10/2026): virar concluída é pedido de
+   * conclusão; concluída NÃO volta (sem reabertura) — para continuar o fluxo, abre-se
+   * outra tarefa.
+   */
   const alternarConcluida = useCallback(async (tarefa: Tarefa, concluida: boolean) => {
+    // Reabertura não existe mais: conclusão é definitiva.
+    if (tarefa.concluida && !concluida) {
+      toast.error("Tarefa concluída não pode ser reaberta — abra uma nova tarefa.");
+      return;
+    }
     // Otimista: a tela responde na hora; se a API negar, volta ao estado anterior.
     setTarefas((atual) =>
       atual.map((t) => (t.id === tarefa.id ? { ...t, concluida } : t)),
@@ -169,7 +246,8 @@ export default function TarefasApi() {
     );
     try {
       await atualizarTarefa(tarefa.id, { concluida });
-      toast.success(concluida ? "Tarefa concluída" : "Tarefa reaberta");
+      toast.success("Tarefa concluída");
+      recarregarNotificacoes();
     } catch (erro) {
       setTarefas((atual) =>
         atual.map((t) => (t.id === tarefa.id ? { ...t, concluida: tarefa.concluida } : t)),
@@ -179,33 +257,14 @@ export default function TarefasApi() {
   }, []);
 
   /**
-   * Marcadores clicaveis da lista (Advbox): importante, urgente e lido — cada um e um
-   * PATCH proprio, otimista (a tela troca na hora e volta se a API negar).
+   * Reagendar (arrastar no kanban): só em tarefa ABERTA — concluída não se move mais
+   * (decisão do titular 16/10/2026); para movimentar de novo, abre-se outra tarefa.
    */
-  const marcar = useCallback(async (tarefa: Tarefa, campo: "importante" | "urgente" | "lido", valor: boolean) => {
-    setTarefas((atual) =>
-      atual.map((t) => {
-        if (t.id !== tarefa.id) return t;
-        if (campo === "urgente") return { ...t, prioridade: valor ? "urgente" : "normal" };
-        if (campo === "importante") return { ...t, importante: valor };
-        return { ...t, lido: valor };
-      }),
-    );
-    try {
-      if (campo === "urgente") {
-        await atualizarTarefa(tarefa.id, { prioridade: valor ? "urgente" : "normal" });
-      } else if (campo === "importante") {
-        await atualizarTarefa(tarefa.id, { importante: valor });
-      } else {
-        await atualizarTarefa(tarefa.id, { lido: valor });
-      }
-    } catch (erro) {
-      setTarefas((atual) => atual.map((t) => (t.id === tarefa.id ? tarefa : t)));
-      toast.error(mensagemDeErro(erro));
-    }
-  }, []);
-
   const reagendar = useCallback(async (tarefa: Tarefa, coluna: ColunaKanban) => {
+    if (tarefa.concluida) {
+      toast.error("Tarefa concluída não pode ser movida — abra uma nova tarefa.");
+      return;
+    }
     const novaData =
       coluna === "atrasadas"
         ? format(addDays(new Date(), -1), "yyyy-MM-dd")
@@ -230,10 +289,16 @@ export default function TarefasApi() {
       const tarefa = tarefas.find((t) => t.id === arrastandoId);
       setArrastandoId(null);
       if (!tarefa || statusDaTarefa(tarefa) === coluna) return;
+      if (tarefa.concluida) {
+        // Concluída não se move mais — nem volta para as colunas de prazo.
+        if (coluna !== "concluidas") {
+          toast.error("Tarefa concluída não pode ser movida — abra uma nova tarefa.");
+        }
+        return;
+      }
       if (coluna === "concluidas") {
         alternarConcluida(tarefa, true);
       } else {
-        if (tarefa.concluida) alternarConcluida(tarefa, false);
         reagendar(tarefa, coluna);
       }
     },
@@ -241,28 +306,28 @@ export default function TarefasApi() {
   );
 
   const hoje0 = HOJE;
-  const agrupadas = useMemo(() => {
-    const pendentes = tarefas.filter((t) => !t.concluida);
-    return {
-      atrasadas: pendentes.filter((t) => t.dataVencimento < hoje0),
-      hoje: pendentes.filter((t) => t.dataVencimento === hoje0),
-      proximas: pendentes.filter((t) => t.dataVencimento > hoje0),
-      concluidas: tarefas.filter((t) => t.concluida),
-    };
-  }, [tarefas, hoje0]);
-
   /**
-   * Recorte da tabela pelo dia escolhido no calendario — mesma regra de data do badge
-   * (prazo fatal, ou vencimento quando nao ha prazo), para o numero do dia e as linhas
-   * de baixo sempre baterem.
+   * Recorte pelo dia escolhido no calendario — mesma regra de data do badge
+   * (prazo fatal, ou vencimento quando nao ha prazo), para o numero do dia e as
+   * linhas de baixo (tabela e colunas do kanban) sempre baterem.
    */
-  const tarefasDaLista = useMemo(
+  const tarefasFiltradas = useMemo(
     () =>
       diaSelecionado
         ? tarefas.filter((tarefa) => prazoDaTarefa(tarefa) === diaSelecionado)
         : tarefas,
     [tarefas, diaSelecionado],
   );
+
+  const agrupadas = useMemo(() => {
+    const pendentes = tarefasFiltradas.filter((t) => !t.concluida);
+    return {
+      atrasadas: pendentes.filter((t) => t.dataVencimento < hoje0),
+      hoje: pendentes.filter((t) => t.dataVencimento === hoje0),
+      proximas: pendentes.filter((t) => t.dataVencimento > hoje0),
+      concluidas: tarefasFiltradas.filter((t) => t.concluida),
+    };
+  }, [tarefasFiltradas, hoje0]);
 
   // Trocar o dia zera a pagina da tabela.
   useEffect(() => setPagina(0), [diaSelecionado]);
@@ -288,6 +353,37 @@ export default function TarefasApi() {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+            {/* Sino ao lado das abas: movimentações de tarefas recebidas. Some quando a
+                pessoa ABRE a tarefa (lista/kanban) — não ao clicar aqui. */}
+            <button
+              type="button"
+              onClick={() => {
+                const pendente = novas[0];
+                if (pendente) {
+                  void abrirNotificacao(pendente.tarefaId);
+                } else {
+                  toast("Nenhuma notificação de tarefa.", { duration: 3000 });
+                }
+              }}
+              aria-label={
+                naoLidas > 0
+                  ? `${naoLidas} notificação(ões) de tarefa — abrir a mais antiga`
+                  : "Nenhuma notificação de tarefa"
+              }
+              title={
+                naoLidas > 0
+                  ? `${naoLidas} tarefa(s) movida(s) para você — clique para abrir`
+                  : "Sem notificações"
+              }
+              className="relative w-10 h-10 inline-flex items-center justify-center rounded-md border border-input text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+            >
+              <Bell className="w-4 h-5" />
+              {naoLidas > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold grid place-items-center">
+                  {naoLidas > 99 ? "99+" : naoLidas}
+                </span>
+              )}
+            </button>
             <button
               onClick={() => {
                 // Com um dia escolhido no calendario, a nova tarefa ja nasce nele.
@@ -329,23 +425,23 @@ export default function TarefasApi() {
           <KpiCard label="Concluídas" value={agrupadas.concluidas.length} icon={CheckCircle2} tone="success" className="p-4" />
         </div>
 
-        {vista === "lista" && (
-          <CalendarioTarefas
-            tarefas={tarefas}
-            diaSelecionado={diaSelecionado}
-            onSelecionar={setDiaSelecionado}
-            className="w-full max-w-[380px] mx-auto lg:mx-0"
-          />
-        )}
+        {/* Calendario nas DUAS abas (pedido 16/10): o dia escolhido filtra o que
+            aparece embaixo — a tabela na aba Lista e as colunas na aba Kanban */}
+        <CalendarioTarefas
+          tarefas={tarefas}
+          diaSelecionado={diaSelecionado}
+          onSelecionar={setDiaSelecionado}
+          className="w-full max-w-[380px] mx-auto lg:mx-0"
+        />
       </div>
 
-      {/* Filtro do dia escolhido no calendario */}
-      {vista === "lista" && diaSelecionado && (
+      {/* Filtro do dia escolhido no calendario (vale para as duas abas) */}
+      {diaSelecionado && (
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-secondary font-medium text-foreground">
             <CalendarDays className="w-3.5 h-3.5" />
             Tarefas de {dataBr(diaSelecionado)}
-            <span className="text-muted-foreground">({tarefasDaLista.length})</span>
+            <span className="text-muted-foreground">({tarefasFiltradas.length})</span>
           </span>
           <button
             type="button"
@@ -360,9 +456,9 @@ export default function TarefasApi() {
       {carregando ? (
         <ListSkeleton rows={6} />
       ) : vista === "lista" ? (
-        tarefasDaLista.length > 0 ? (
+        tarefasFiltradas.length > 0 ? (
           <TabelaTarefas
-            tarefas={tarefasDaLista}
+            tarefas={tarefasFiltradas}
             pagina={pagina}
             porPagina={porPagina}
             onPagina={setPagina}
@@ -370,9 +466,8 @@ export default function TarefasApi() {
               setPorPagina(quantidade);
               setPagina(0);
             }}
-            onAbrir={setTarefaAberta}
-            onAlternar={alternarConcluida}
-            onMarcar={marcar}
+            onAbrir={abrirTarefa}
+            onHistorico={setTarefaHistorico}
             nomeDeResponsavel={(userId) => nomes.get(userId) || "—"}
           />
         ) : diaSelecionado ? (
@@ -398,8 +493,7 @@ export default function TarefasApi() {
           arrastandoId={arrastandoId}
           onArrastar={setArrastandoId}
           onSoltar={soltar}
-          onAbrir={setTarefaAberta}
-          onAlternar={alternarConcluida}
+          onAbrir={abrirTarefa}
         />
       ) : (
         <EmptyState
@@ -419,10 +513,33 @@ export default function TarefasApi() {
         </p>
       )}
 
-      <DrawerTarefa
+      {/* Histórico (timeline) da tarefa numa JANELA CENTRAL GRANDE — mesma medida da
+          listagem de clientes, para ler a interação inteira sem apertar (pedido 15/10) */}
+      <Dialog
+        open={Boolean(tarefaHistorico)}
+        onOpenChange={(aberto) => {
+          if (!aberto) setTarefaHistorico(null);
+        }}
+      >
+        <DialogContent className="max-w-5xl w-[92vw] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Histórico — {tarefaHistorico?.titulo}</DialogTitle>
+            <DialogDescription>
+              Toda a movimentação da tarefa: quem criou, quem recebeu, para quem foi, o que
+              mudou, recados e anexos.
+            </DialogDescription>
+          </DialogHeader>
+          {tarefaHistorico && <TarefaTimeline tarefaId={tarefaHistorico.id} />}
+        </DialogContent>
+      </Dialog>
+
+      <DetalheTarefa
         tarefa={tarefaAberta}
         onFechar={() => setTarefaAberta(null)}
-        onAlternar={alternarConcluida}
+        onAtualizada={(atualizada) => {
+          setTarefas((atual) => atual.map((t) => (t.id === atualizada.id ? atualizada : t)));
+          setTarefaAberta(atualizada);
+        }}
         onSalvar={async (tarefa, campos) => {
           try {
             const atualizada = await atualizarTarefa(tarefa.id, campos);
@@ -448,10 +565,16 @@ export default function TarefasApi() {
         onCriar={async (dados) => {
           try {
             const nova = await criarTarefa(dados);
+            setDialogNova(false);
+            if (dados.responsavelId) {
+              // Nasceu encaminhada: não é "minha tarefa", então recarrega a lista.
+              toast.success("Tarefa criada e encaminhada para o responsável.");
+              await carregar(busca);
+              return;
+            }
             setTarefas((atual) => [...atual, nova].sort(
               (a, b) => a.dataVencimento.localeCompare(b.dataVencimento),
             ));
-            setDialogNova(false);
             toast.success("Tarefa criada");
           } catch (erro) {
             const campos = erro instanceof ErroApi && erro.campos.length > 0 ? erro.campos : null;
@@ -468,19 +591,19 @@ export default function TarefasApi() {
 /* ----------------------------------------------------------------- kanban */
 
 function VisaoKanban({
-  agrupadas, arrastandoId, onArrastar, onSoltar, onAbrir, onAlternar,
+  agrupadas, arrastandoId, onArrastar, onSoltar, onAbrir,
 }: {
   agrupadas: Record<ColunaKanban, Tarefa[]>;
   arrastandoId: string | null;
   onArrastar: (id: string | null) => void;
   onSoltar: (coluna: ColunaKanban) => void;
   onAbrir: (tarefa: Tarefa) => void;
-  onAlternar: (tarefa: Tarefa, concluida: boolean) => void;
 }) {
   return (
     <div>
       <p className="text-xs text-muted-foreground mb-3">
-        Arraste um card para concluir ou reagendar (Ontem / Hoje / +7 dias). Clique para abrir.
+        Arraste um card para CONCLUIR (coluna Concluídas) ou reagendar (Ontem / Hoje / +7 dias) —
+        só em tarefas abertas; concluída não se move mais. Clique para abrir.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {COLUNAS_KANBAN.map((coluna) => {
@@ -506,9 +629,7 @@ function VisaoKanban({
                     Vazio
                   </p>
                 )}
-                {tarefas.map((tarefa) => {
-                  const urgente = tarefa.prioridade === "urgente" && !tarefa.concluida;
-                  return (
+                {tarefas.map((tarefa) => (
                     <div
                       key={tarefa.id}
                       draggable
@@ -520,21 +641,18 @@ function VisaoKanban({
                       }`}
                     >
                       <div className="flex items-start gap-2">
-                        <button
-                          onClick={(evento) => {
-                            evento.stopPropagation();
-                            onAlternar(tarefa, !tarefa.concluida);
-                          }}
-                          className="mt-0.5 shrink-0"
-                          aria-label={tarefa.concluida ? "Reabrir tarefa" : "Concluir tarefa"}
-                        >
-                          {tarefa.concluida ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-success" />
-                          ) : (
-                            <Circle className="w-3.5 h-3.5 text-muted-foreground hover:text-accent" />
-                          )}
-                        </button>
                         <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span
+                              className={`text-[9px] px-1 py-0.5 rounded font-semibold uppercase ${
+                                tarefa.concluida
+                                  ? "bg-secondary text-muted-foreground"
+                                  : "bg-accent/15 text-accent"
+                              }`}
+                            >
+                              {tarefa.concluida ? "Concluída" : "Aberta"}
+                            </span>
+                          </div>
                           <p
                             className={`text-xs font-medium leading-snug ${
                               tarefa.concluida
@@ -544,15 +662,15 @@ function VisaoKanban({
                           >
                             {tarefa.titulo}
                           </p>
-                          {tarefa.nomeCliente && (
-                            <p className="text-[10px] text-accent font-medium mt-1 truncate">
-                              {tarefa.nomeCliente}
-                            </p>
-                          )}
+                          {/* Setor que enviou + contrato (o cliente tem card/coluna propria) */}
+                          <p className="text-[10px] text-muted-foreground mt-1 truncate">
+                            {tarefa.setorNome ? `Setor: ${tarefa.setorNome}` : "—"}
+                            {tarefa.contratoNumero ? ` · Contrato nº ${tarefa.contratoNumero}` : ""}
+                          </p>
                           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                            {urgente && (
-                              <span className="text-[8px] px-1 py-0.5 rounded bg-destructive/15 text-destructive font-bold uppercase">
-                                Urgente
+                            {tarefa.prioridade && (
+                              <span className={`text-[9px] px-1 py-0.5 rounded bg-secondary capitalize ${corDePrioridade(tarefa.prioridade)}`}>
+                                {tarefa.prioridade}
                               </span>
                             )}
                             <span className="text-[10px] text-muted-foreground">
@@ -562,8 +680,7 @@ function VisaoKanban({
                         </div>
                       </div>
                     </div>
-                  );
-                })}
+                  ))}
               </div>
             </div>
           );
@@ -573,24 +690,89 @@ function VisaoKanban({
   );
 }
 
-/* ----------------------------------------------------------------- drawer */
+/* --------- detalhe da tarefa: janela CENTRAL grande (igual a do Histórico) -------- */
 
-function DrawerTarefa({
-  tarefa, onFechar, onAlternar, onSalvar, nomeUsuario,
+function DetalheTarefa({
+  tarefa, onFechar, onSalvar, nomeUsuario, onAtualizada,
 }: {
   tarefa: Tarefa | null;
   onFechar: () => void;
-  onAlternar: (tarefa: Tarefa, concluida: boolean) => void;
-  onSalvar: (tarefa: Tarefa, campos: { dataVencimento?: string; prioridade?: string }) => void;
+  onSalvar: (
+    tarefa: Tarefa,
+    campos: { dataVencimento?: string; prioridade?: string; concluida?: boolean },
+  ) => void;
   nomeUsuario: string;
+  /** Chamado depois do encaminhar (a lista de fundo recarrega a linha). */
+  onAtualizada?: (tarefa: Tarefa) => void;
 }) {
   const [vencimento, setVencimento] = useState("");
+  /** Select Normal/Alta/Urgente — texto antigo fora do catálogo cai em "normal". */
   const [prioridade, setPrioridade] = useState("normal");
+  /** Status: aberta x concluída (o OK antigo da lista virou este campo). */
+  const [concluida, setConcluida] = useState(false);
+  /**
+   * Última movimentação (19/10/2026): o recado da linha mais recente da trilha.
+   * Sem trilha (ou sem recado nela) o campo mostra a descrição do CONTRATO — a
+   * tarefa nasce do contrato, então o texto continua dizendo do que se trata.
+   */
+  const [ultimaMovimentacao, setUltimaMovimentacao] = useState<{
+    texto: string;
+    /** `movimentacao` = recado da trilha; `contrato` = descrição do contrato (fallback). */
+    origem: "movimentacao" | "contrato";
+  } | null>(null);
+  const [carregandoMovimentacao, setCarregandoMovimentacao] = useState(false);
+
+  useEffect(() => {
+    if (!tarefa) {
+      setUltimaMovimentacao(null);
+      return;
+    }
+    let vivo = true;
+    setUltimaMovimentacao(null);
+    setCarregandoMovimentacao(true);
+
+    /** Sem recado na trilha: cai na descrição do contrato da tarefa. */
+    const daDescricaoDoContrato = async () => {
+      if (!tarefa.contratoId) return null;
+      try {
+        const contrato = await buscarContrato(tarefa.contratoId);
+        const texto = contrato.descricao?.trim();
+        return texto ? { texto, origem: "contrato" as const } : null;
+      } catch {
+        return null;
+      }
+    };
+
+    listarHistoricoTarefa(tarefa.id)
+      .then(async (linhas) => {
+        if (!vivo) return;
+        // A trilha vem mais recente primeiro: o primeiro recado é o da última movimentação.
+        const recado = linhas.find((linha) => linha.mensagem?.trim())?.mensagem?.trim();
+        if (recado) {
+          setUltimaMovimentacao({ texto: recado, origem: "movimentacao" });
+        } else {
+          setUltimaMovimentacao(await daDescricaoDoContrato());
+        }
+      })
+      .catch(async () => {
+        // Trilha restrita (403) ou erro de rede: mostra o que dá — a descrição do contrato.
+        if (!vivo) return;
+        setUltimaMovimentacao(await daDescricaoDoContrato());
+      })
+      .finally(() => {
+        if (vivo) setCarregandoMovimentacao(false);
+      });
+
+    return () => {
+      vivo = false;
+    };
+  }, [tarefa]);
 
   useEffect(() => {
     if (tarefa) {
       setVencimento(tarefa.dataVencimento);
-      setPrioridade(tarefa.prioridade);
+      setPrioridade(prioridadeValida(tarefa.prioridade));
+      setConcluida(tarefa.concluida);
     }
   }, [tarefa]);
 
@@ -605,32 +787,24 @@ function DrawerTarefa({
     : "Pendente";
 
   const mudou =
-    vencimento !== tarefa.dataVencimento || prioridade !== tarefa.prioridade;
+    vencimento !== tarefa.dataVencimento ||
+    prioridade !== prioridadeValida(tarefa.prioridade) ||
+    concluida !== tarefa.concluida;
 
   return (
-    <Sheet open={!!tarefa} onOpenChange={(aberto) => !aberto && onFechar()}>
-      <SheetContent className="w-full sm:max-w-lg flex flex-col">
-        <SheetHeader>
+    <Dialog open={!!tarefa} onOpenChange={(aberto) => !aberto && onFechar()}>
+      {/* 1 coluna (16/10/2026): o Encaminhar ficou ABAIXO da descricao — janela estreita */}
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
           <div className="flex items-start gap-3">
-            <button
-              onClick={() => onAlternar(tarefa, !tarefa.concluida)}
-              className="mt-0.5 shrink-0"
-              aria-label={tarefa.concluida ? "Reabrir tarefa" : "Concluir tarefa"}
-            >
-              {tarefa.concluida ? (
-                <CheckCircle2 className="w-5 h-5 text-success" />
-              ) : (
-                <Circle className="w-5 h-5 text-muted-foreground hover:text-accent transition-colors" />
-              )}
-            </button>
             <div className="flex-1 min-w-0">
-              <SheetTitle
+              <DialogTitle
                 className={`text-base font-semibold leading-tight ${
                   tarefa.concluida ? "line-through text-muted-foreground" : "text-foreground"
                 }`}
               >
                 {tarefa.titulo}
-              </SheetTitle>
+              </DialogTitle>
               {tarefa.nomeCliente && (
                 <p className="text-xs text-accent font-medium mt-1">
                   Cliente: {tarefa.nomeCliente}
@@ -638,78 +812,148 @@ function DrawerTarefa({
               )}
             </div>
           </div>
-          <SheetDescription className="sr-only">Detalhes da tarefa</SheetDescription>
-        </SheetHeader>
+          <DialogDescription className="sr-only">Detalhes da tarefa</DialogDescription>
+        </DialogHeader>
 
-        <div className="px-5 py-4 space-y-4 flex-1 overflow-y-auto">
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div>
-              <p className="text-muted-foreground">Status</p>
-              <Badge
-                variant={
-                  tarefa.concluida
-                    ? "outline"
-                    : tarefa.dataVencimento < HOJE
-                    ? "destructive"
-                    : "secondary"
-                }
-                className="mt-1"
-              >
-                {status}
-              </Badge>
+        <div className="space-y-4">
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <p className="text-muted-foreground">Status</p>
+                <Badge
+                  variant={
+                    tarefa.concluida
+                      ? "outline"
+                      : tarefa.dataVencimento < HOJE
+                      ? "destructive"
+                      : "secondary"
+                  }
+                  className="mt-1"
+                >
+                  {status}
+                </Badge>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Responsável</p>
+                <p className="font-medium flex items-center gap-1 mt-1">
+                  <User className="w-3 h-3" /> {nomeUsuario || "Você"}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-muted-foreground">Responsável</p>
-              <p className="font-medium flex items-center gap-1 mt-1">
-                <User className="w-3 h-3" /> {nomeUsuario || "Você"}
-              </p>
-            </div>
-          </div>
 
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="tarefa-vencimento">Vencimento</Label>
-              <Input
-                id="tarefa-vencimento"
-                type="date"
-                value={vencimento}
-                onChange={(evento) => setVencimento(evento.target.value)}
-              />
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="tarefa-status">Status</Label>
+                <Select
+                  value={concluida ? "concluida" : "aberta"}
+                  onValueChange={(valor) => {
+                    if (valor === "concluida") {
+                      setConcluida(true);
+                    } else if (tarefa.concluida) {
+                      // Reabertura não existe: conclusão é definitiva (16/10/2026).
+                      toast.error("Tarefa concluída não pode voltar para aberta — abra uma nova tarefa.");
+                    } else {
+                      setConcluida(false);
+                    }
+                  }}
+                >
+                  <SelectTrigger id="tarefa-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="aberta">Aberta</SelectItem>
+                    <SelectItem value="concluida">Concluída</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="tarefa-vencimento">Vencimento</Label>
+                {/* Somente leitura (16/10/2026): do detalhe só o Status muda; a data é
+                    definida na criação/encaminhamento */}
+                <Input
+                  id="tarefa-vencimento"
+                  type="date"
+                  value={vencimento}
+                  disabled
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="tarefa-prioridade">Prioridade</Label>
+                <Select value={prioridade} disabled>
+                  <SelectTrigger id="tarefa-prioridade">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRIORIDADES.map((item) => (
+                      <SelectItem key={item.valor} value={item.valor}>
+                        {item.rotulo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {mudou && (
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() =>
+                    onSalvar(tarefa, {
+                      dataVencimento: vencimento,
+                      prioridade,
+                      concluida,
+                    })
+                  }
+                >
+                  <Save className="w-3.5 h-3.5" /> Salvar alterações
+                </Button>
+              )}
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="tarefa-prioridade">Prioridade</Label>
-              <Select value={prioridade} onValueChange={setPrioridade}>
-                <SelectTrigger id="tarefa-prioridade">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="normal">Normal</SelectItem>
-                  <SelectItem value="urgente">Urgente</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {mudou && (
-              <Button
-                size="sm"
-                className="gap-1.5"
-                onClick={() =>
-                  onSalvar(tarefa, { dataVencimento: vencimento, prioridade })
-                }
-              >
-                <Save className="w-3.5 h-3.5" /> Salvar alterações
-              </Button>
+
+            {tarefa.descricao && (
+              <div className="bg-secondary/50 rounded-md p-3">
+                <p className="text-xs text-muted-foreground mb-1 font-medium">Descrição</p>
+                <p className="text-sm text-foreground whitespace-pre-wrap">{tarefa.descricao}</p>
+              </div>
             )}
           </div>
 
-          {tarefa.descricao && (
-            <div className="bg-secondary/50 rounded-md p-3">
-              <p className="text-xs text-muted-foreground mb-1 font-medium">Descrição</p>
-              <p className="text-sm text-foreground whitespace-pre-wrap">{tarefa.descricao}</p>
+          {/* Última movimentação (19/10/2026): recado da linha mais recente da trilha;
+              sem movimentação (ou trilha sem recado), mostra a descrição do contrato.
+              Só leitura — mexer na movimentação é pelo Responder/Encaminhar embaixo. */}
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground font-medium">Última movimentação</p>
+            <textarea
+              readOnly
+              aria-label="Última movimentação"
+              rows={3}
+              value={
+                carregandoMovimentacao
+                  ? "Carregando movimentação..."
+                  : ultimaMovimentacao?.texto ?? ""
+              }
+              placeholder="Sem movimentações nem descrição de contrato para mostrar."
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground resize-none"
+            />
+            {!carregandoMovimentacao && ultimaMovimentacao?.origem === "contrato" && (
+              <p className="text-[11px] text-muted-foreground">
+                Tarefa ainda sem movimentações — mostrando a descrição do contrato.
+              </p>
+            )}
+          </div>
+
+          {/* Encaminhar ABAIXO da descricao (16/10/2026) — só em tarefa ABERTA:
+              concluída não se movimenta mais (abre-se outra tarefa) */}
+          {tarefa.concluida ? (
+            <div className="rounded-md border border-dashed p-4 text-xs text-muted-foreground">
+              Tarefa <strong>concluída</strong> — ela não se movimenta mais. Para continuar o
+              fluxo, abra uma nova tarefa.
             </div>
+          ) : (
+            <EncaminharTarefa tarefa={tarefa} onAtualizada={onAtualizada} />
           )}
         </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -726,6 +970,9 @@ function DialogNovaTarefa({
     dataVencimento: string;
     prioridade?: string;
     nomeCliente?: string;
+    /** Encaminhamento na criação: setor e pessoa que recebe (ausente = é minha). */
+    setorId?: string | null;
+    responsavelId?: string | null;
   }) => Promise<void>;
   /** Vencimento ja preenchido quando a tarefa nasce pelo calendario. */
   dataInicial?: string | null;
@@ -735,9 +982,36 @@ function DialogNovaTarefa({
   const [titulo, setTitulo] = useState("");
   const [descricao, setDescricao] = useState("");
   const [vencimento, setVencimento] = useState(HOJE);
+  /** Prioridade é SELECT Normal/Alta/Urgente (pedido do titular 16/10/2026). */
   const [prioridade, setPrioridade] = useState("normal");
   const [cliente, setCliente] = useState<ClienteEscolhido | null>(null);
   const [salvando, setSalvando] = useState(false);
+  /**
+   * "É minha tarefa" vem MARCADO (o caso mais comum). Desmarcando, a tarefa nasce já
+   * encaminhada: setor + usuário que recebe (pedido do titular em 16/10/2026).
+   */
+  const [ehMinha, setEhMinha] = useState(true);
+  const [setorId, setSetorId] = useState("");
+  const [responsavelId, setResponsavelId] = useState("");
+  const [setores, setSetores] = useState<Setor[]>([]);
+  const [membros, setMembros] = useState<Membro[]>([]);
+
+  // Listas do encaminhamento carregam uma vez (leitura aberta a qualquer autenticado).
+  useEffect(() => {
+    if (!aberto) return;
+    if (setores.length === 0) {
+      void listarSetores().then(setSetores).catch(() => setSetores([]));
+    }
+    if (membros.length === 0) {
+      void listarMembros().then(setMembros).catch(() => setMembros([]));
+    }
+  }, [aberto, setores.length, membros.length]);
+
+  /** Pessoas do setor escolhido; sem setor ainda, mostra todos. */
+  const membrosDoSetor = useMemo(
+    () => (setorId ? membros.filter((membro) => membro.setores?.some((setor) => setor.id === setorId)) : membros),
+    [membros, setorId],
+  );
 
   // o dialog fica montado: ao abrir, volta vencimento e cliente para o que veio do
   // calendario ou da lista de Clientes (ou limpa)
@@ -745,6 +1019,9 @@ function DialogNovaTarefa({
     if (aberto) {
       setVencimento(dataInicial ?? HOJE);
       setCliente(clienteInicial ?? null);
+      setEhMinha(true);
+      setSetorId("");
+      setResponsavelId("");
     }
   }, [aberto, dataInicial, clienteInicial]);
 
@@ -754,12 +1031,23 @@ function DialogNovaTarefa({
     setVencimento(HOJE);
     setPrioridade("normal");
     setCliente(null);
+    setEhMinha(true);
+    setSetorId("");
+    setResponsavelId("");
   };
 
   const enviar = async (evento: React.FormEvent) => {
     evento.preventDefault();
     if (!titulo.trim()) {
       toast.error("Informe o título da tarefa");
+      return;
+    }
+    if (!ehMinha && !setorId) {
+      toast.error("Escolha o setor que vai receber a tarefa");
+      return;
+    }
+    if (!ehMinha && !responsavelId) {
+      toast.error("Escolha o usuário que vai receber a tarefa");
       return;
     }
     setSalvando(true);
@@ -770,6 +1058,8 @@ function DialogNovaTarefa({
         dataVencimento: vencimento,
         prioridade,
         nomeCliente: cliente?.nome.trim() || undefined,
+        setorId: ehMinha ? undefined : setorId,
+        responsavelId: ehMinha ? undefined : responsavelId,
       });
       limpar();
     } finally {
@@ -787,11 +1077,13 @@ function DialogNovaTarefa({
         }
       }}
     >
-      <DialogContent className="max-w-lg">
+      {/* Mesma medida do form de Usuários (max-w-2xl + scroll) — cabe em 1366x768 */}
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Nova tarefa</DialogTitle>
           <DialogDescription>
-            A tarefa fica para você. O roteamento automático por papel entra com o módulo de membros.
+            Por padrão a tarefa fica com você. Desmarque "É minha tarefa" para criar e já
+            encaminhar para o setor e a pessoa que vão receber.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={enviar} className="space-y-4">
@@ -833,8 +1125,11 @@ function DialogNovaTarefa({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="normal">Normal</SelectItem>
-                  <SelectItem value="urgente">Urgente</SelectItem>
+                  {PRIORIDADES.map((item) => (
+                    <SelectItem key={item.valor} value={item.valor}>
+                      {item.rotulo}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -848,6 +1143,84 @@ function DialogNovaTarefa({
               inicial={clienteInicial}
               onChange={setCliente}
             />
+          </div>
+
+          {/* É minha (padrão) x encaminhar na criação: setor + pessoa que recebe */}
+          <div className="space-y-3 rounded-xl border border-border bg-card p-3">
+            <label
+              htmlFor="nova-eh-minha"
+              className="flex items-center gap-2 text-sm font-medium cursor-pointer"
+            >
+              <Checkbox
+                id="nova-eh-minha"
+                checked={ehMinha}
+                onCheckedChange={(valor) => {
+                  const minha = valor === true;
+                  setEhMinha(minha);
+                  if (minha) {
+                    setSetorId("");
+                    setResponsavelId("");
+                  }
+                }}
+              />
+              É minha tarefa (fica com você)
+            </label>
+
+            {!ehMinha && (
+              <p className="text-[11px] text-muted-foreground">
+                A tarefa nasce já encaminhada: escolha o setor e a pessoa que vai receber.
+              </p>
+            )}
+
+            {!ehMinha && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="nova-setor">Setor que recebe *</Label>
+                  <Select
+                    value={setorId}
+                    onValueChange={(valor) => {
+                      setSetorId(valor);
+                      setResponsavelId("");
+                    }}
+                  >
+                    <SelectTrigger id="nova-setor">
+                      <SelectValue placeholder="Selecione o setor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {setores.map((setor) => (
+                        <SelectItem key={setor.id} value={setor.id}>
+                          {setor.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="nova-destinatario">Usuário que recebe *</Label>
+                  <Select
+                    value={responsavelId}
+                    onValueChange={setResponsavelId}
+                    disabled={!setorId}
+                  >
+                    <SelectTrigger id="nova-destinatario">
+                      <SelectValue placeholder="Selecione a pessoa" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {membrosDoSetor.map((membro) => (
+                        <SelectItem key={membro.userId} value={membro.userId}>
+                          {membro.nome || membro.email || membro.userId}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {setorId && membrosDoSetor.length === 0 && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Nenhum usuário vinculado a este setor — cadastre em Usuários.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onFechar}>

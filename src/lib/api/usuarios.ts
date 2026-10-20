@@ -70,9 +70,14 @@ export interface UsuarioAtualizacao {
   permissionGroupId?: string | null;
 }
 
-/** Lista da organização (admin/ceo). */
-export function listarUsuarios(): Promise<UsuarioAdm[]> {
-  return apiFetch<UsuarioAdm[]>("/usuarios");
+/** Onde a busca de texto procura — o "tipo de busca" do select da tela de usuários. */
+export type BuscaUsuarios = "nome" | "email";
+
+/** Lista da organização (admin/ceo). A busca é opcional (tipo escolhido no front). */
+export function listarUsuarios(filtro: { busca?: string; buscaEm?: BuscaUsuarios } = {}): Promise<UsuarioAdm[]> {
+  return apiFetch<UsuarioAdm[]>("/usuarios", {
+    params: { busca: filtro.busca, buscaEm: filtro.buscaEm },
+  });
 }
 
 /** Cria o login + vínculo (201). E-mail já usado na organização → `ErroApi` 409. */

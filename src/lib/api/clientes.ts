@@ -88,7 +88,14 @@ export interface Cliente extends ClienteNovo {
 /** Página no contrato estável da API (`Page` → `content` + `page`) — mora em `pagina.ts`. */
 export type { Pagina } from "@/lib/api/pagina";
 
+/** Onde a busca de texto procura — o "tipo de busca" do select da tela de clientes. */
+export type BuscaClientes = "nome" | "cpf_cnpj" | "email";
+
 export interface FiltroClientes {
+  /** Texto digitado na busca (o campo em que ele é procurado vem em `buscaEm`). */
+  busca?: string;
+  /** `nome`, `cpf_cnpj` ou `email`; sem ele a API procura em nome OU CPF/CNPJ. */
+  buscaEm?: BuscaClientes;
   nome?: string;
   cpfCnpj?: string;
   situacao?: string;
@@ -99,6 +106,8 @@ export interface FiltroClientes {
 export function listarClientes(filtro: FiltroClientes = {}): Promise<Pagina<Cliente>> {
   return apiFetch<Pagina<Cliente>>("/clientes", {
     params: {
+      busca: filtro.busca,
+      buscaEm: filtro.buscaEm,
       nome: filtro.nome,
       cpfCnpj: filtro.cpfCnpj,
       situacao: filtro.situacao,

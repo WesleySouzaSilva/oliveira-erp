@@ -28,7 +28,8 @@ import {
 } from "@/components/ui/dialog";
 import { ErroApi, mensagemDeErro, usuarioApi } from "@/lib/api/http";
 import {
-  atualizarTarefa, criarTarefa, listarHistoricoTarefa, listarTarefas, prazoDaTarefa, type Tarefa,
+  atualizarTarefa, criarTarefa, listarHistoricoTarefa, listarTarefas, prazoDaTarefa,
+  type BuscaTarefas, type Tarefa,
 } from "@/lib/api/tarefas";
 import { buscarContrato } from "@/lib/api/contratos";
 import { TabelaTarefas } from "@/pages/erp/TarefasLista";
@@ -98,6 +99,16 @@ function statusDaTarefa(t: Tarefa): ColunaKanban {
   return "proximas";
 }
 
+/**
+ * Campos em que a busca de texto procura — o select ao lado do campo (decisão do titular,
+ * 20/10/2026, mesmo estilo da lista de contratos): título, descrição ou cliente.
+ */
+const CAMPOS_BUSCA: { valor: BuscaTarefas; rotulo: string; placeholder: string }[] = [
+  { valor: "titulo", rotulo: "Título", placeholder: "Buscar por título..." },
+  { valor: "descricao", rotulo: "Descrição", placeholder: "Buscar na descrição..." },
+  { valor: "cliente", rotulo: "Cliente", placeholder: "Buscar por cliente..." },
+];
+
 export default function TarefasApi() {
   const usuario = usuarioApi();
   /** Sino (store único com o menu): total de não lidas + as que ainda não foram vistas. */
@@ -107,6 +118,8 @@ export default function TarefasApi() {
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState("");
+  /** Campo em que a busca de texto procura (select ao lado do campo). */
+  const [buscaEm, setBuscaEm] = useState<BuscaTarefas>("titulo");
   const [vista, setVista] = useState<Vista>("lista");
   const [semMaisPaginas, setSemMaisPaginas] = useState(true);
   /** Dia clicado no calendario: filtra a tabela da aba Lista (null = todas). */
@@ -188,12 +201,16 @@ export default function TarefasApi() {
     };
   }, []);
 
-  const carregar = useCallback(async (texto: string) => {
+  // `campo` usa o padrão da propria chamada: trocar o select e chamar `carregar(busca)`
+  // ja busca no campo novo, sem depender do estado dentro do useCallback.
+  const carregar = useCallback(async (texto: string, campo: BuscaTarefas = buscaEm) => {
     setCarregando(true);
     try {
+      const termo = texto.trim();
       const resultado = await listarTarefas({
         minhas: true,
-        busca: texto.trim() || undefined,
+        busca: termo || undefined,
+        buscaEm: termo ? campo : undefined,
         page: 0,
         size: 200,
       });
@@ -204,6 +221,7 @@ export default function TarefasApi() {
     } finally {
       setCarregando(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- campo = buscaEm le o estado na hora da chamada
   }, []);
 
   useEffect(() => {
@@ -319,6 +337,9 @@ export default function TarefasApi() {
     [tarefas, diaSelecionado],
   );
 
+  const campoBuscaPlaceholder =
+    CAMPOS_BUSCA.find((opcao) => opcao.valor === buscaEm)?.placeholder ?? CAMPOS_BUSCA[0].placeholder;
+
   const agrupadas = useMemo(() => {
     const pendentes = tarefasFiltradas.filter((t) => !t.concluida);
     return {
@@ -398,16 +419,35 @@ export default function TarefasApi() {
         }
       />
 
-      {/* Busca */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          value={busca}
-          onChange={(evento) => setBusca(evento.target.value)}
-          placeholder="Buscar por título ou cliente..."
-          className="pl-9"
-          aria-label="Buscar tarefas"
-        />
+      {/* Busca com TIPO (mesmo estilo das outras telas): titulo, descricao ou cliente. */}
+      <div className="flex items-center gap-2 max-w-xl">
+        <select
+          aria-label="Tipo de busca"
+          value={buscaEm}
+          onChange={(evento) => {
+            const novoCampo = evento.target.value as BuscaTarefas;
+            setBuscaEm(novoCampo);
+            if (timerBusca.current) window.clearTimeout(timerBusca.current);
+            carregar(busca, novoCampo);
+          }}
+          className="h-10 w-36 shrink-0 rounded-md border border-input bg-background px-3 text-sm"
+        >
+          {CAMPOS_BUSCA.map((opcao) => (
+            <option key={opcao.valor} value={opcao.valor}>
+              {opcao.rotulo}
+            </option>
+          ))}
+        </select>
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            value={busca}
+            onChange={(evento) => setBusca(evento.target.value)}
+            placeholder={campoBuscaPlaceholder}
+            className="pl-9"
+            aria-label={campoBuscaPlaceholder}
+          />
+        </div>
       </div>
 
       {/* KPIs (esquerda, 2 colunas x 2 linhas) + calendario maior no canto — so na aba Lista */}

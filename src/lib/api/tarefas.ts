@@ -101,11 +101,16 @@ export interface TarefaAtualizacao {
   tarefaFutura?: boolean;
 }
 
+/** Onde a busca de texto procura — o "tipo de busca" do select da tela de tarefas. */
+export type BuscaTarefas = "titulo" | "descricao" | "cliente";
+
 export interface FiltroTarefas {
   /** Recorte "Minhas tarefas" (o painel do próprio usuário). */
   minhas?: boolean;
   concluida?: boolean;
   busca?: string;
+  /** `titulo`, `descricao` ou `cliente`; sem ele a API procura em título OU cliente. */
+  buscaEm?: BuscaTarefas;
   processoId?: string;
   page?: number;
   size?: number;
@@ -117,6 +122,7 @@ export function listarTarefas(filtro: FiltroTarefas = {}): Promise<Pagina<Tarefa
       minhas: filtro.minhas,
       concluida: filtro.concluida,
       busca: filtro.busca,
+      buscaEm: filtro.buscaEm,
       processoId: filtro.processoId,
       page: filtro.page ?? 0,
       size: filtro.size ?? 50,

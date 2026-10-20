@@ -30,6 +30,7 @@ import {
   atualizarUsuario,
   criarUsuario,
   listarUsuarios,
+  type BuscaUsuarios,
   type UsuarioAdm,
 } from "@/lib/api/usuarios";
 import { listarSetores, type Setor } from "@/lib/api/setores";
@@ -118,6 +119,15 @@ const moeda = (valor: number | null | undefined): string =>
     ? "—"
     : valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+/**
+ * Campos em que a busca de texto procura — o select ao lado do campo (decisão do titular,
+ * 20/10/2026, mesmo estilo da lista de contratos): nome ou e-mail.
+ */
+const CAMPOS_BUSCA: { valor: BuscaUsuarios; rotulo: string; placeholder: string }[] = [
+  { valor: "nome", rotulo: "Nome", placeholder: "Buscar por nome..." },
+  { valor: "email", rotulo: "E-mail", placeholder: "Buscar por e-mail..." },
+];
+
 export default function Usuarios() {
   // Só o ADMINISTRADOR gerencia pessoas (decisão do titular 16/10/2026): o menu nem
   // aparece para os demais, e a página responde o aviso de acesso restrito.
@@ -127,6 +137,8 @@ export default function Usuarios() {
   const [setores, setSetores] = useState<Setor[]>([]);
   const [objetos, setObjetos] = useState<TipoObjeto[]>([]);
   const [busca, setBusca] = useState("");
+  /** Campo em que a busca de texto procura (select ao lado do campo). */
+  const [buscaEm, setBuscaEm] = useState<BuscaUsuarios>("nome");
   const [carregando, setCarregando] = useState(true);
 
   const [dialogAberto, setDialogAberto] = useState(false);
@@ -332,12 +344,18 @@ export default function Usuarios() {
     );
   }
 
+  /** Opção escolhida no select de tipo de busca (o placeholder muda junto). */
+  const campoBusca =
+    CAMPOS_BUSCA.find((opcao) => opcao.valor === buscaEm) ?? CAMPOS_BUSCA[0];
+
   const filtrados = usuarios.filter((usuario) => {
     const termo = busca.trim().toLowerCase();
     if (!termo) return true;
-    return (
-      (usuario.nome ?? "").toLowerCase().includes(termo) || usuario.email.toLowerCase().includes(termo)
-    );
+    const nome = (usuario.nome ?? "").toLowerCase();
+    const email = usuario.email.toLowerCase();
+    if (buscaEm === "nome") return nome.includes(termo);
+    if (buscaEm === "email") return email.includes(termo);
+    return nome.includes(termo) || email.includes(termo);
   });
 
   return (
@@ -357,18 +375,30 @@ export default function Usuarios() {
         }
       />
 
-      <form
-        onSubmit={(evento) => evento.preventDefault()}
-        className="relative"
-      >
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          value={busca}
-          onChange={(evento) => setBusca(evento.target.value)}
-          placeholder="Buscar por nome ou e-mail..."
-          aria-label="Buscar usuário por nome ou e-mail"
-          className="pl-9"
-        />
+      {/* Busca com TIPO (mesmo estilo das outras telas): nome ou e-mail. */}
+      <form onSubmit={(evento) => evento.preventDefault()} className="flex items-center gap-2">
+        <select
+          aria-label="Tipo de busca"
+          value={buscaEm}
+          onChange={(evento) => setBuscaEm(evento.target.value as BuscaUsuarios)}
+          className="h-10 w-40 shrink-0 rounded-md border border-input bg-background px-3 text-sm"
+        >
+          {CAMPOS_BUSCA.map((opcao) => (
+            <option key={opcao.valor} value={opcao.valor}>
+              {opcao.rotulo}
+            </option>
+          ))}
+        </select>
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            value={busca}
+            onChange={(evento) => setBusca(evento.target.value)}
+            placeholder={campoBusca.placeholder}
+            aria-label={campoBusca.placeholder}
+            className="pl-9"
+          />
+        </div>
       </form>
 
       {carregando ? (

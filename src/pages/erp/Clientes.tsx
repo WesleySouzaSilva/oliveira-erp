@@ -45,6 +45,7 @@ import {
   criarCliente,
   excluirCliente,
   listarClientes,
+  type BuscaClientes,
   type Cliente,
   type ClienteNovo,
   type Pagina,
@@ -268,11 +269,23 @@ function paraDto(
   };
 }
 
+/**
+ * Campos em que a busca de texto procura — o select ao lado do campo (decisão do titular,
+ * 20/10/2026, mesmo estilo da lista de contratos): nome, CPF/CNPJ ou e-mail.
+ */
+const CAMPOS_BUSCA: { valor: BuscaClientes; rotulo: string; placeholder: string }[] = [
+  { valor: "nome", rotulo: "Nome", placeholder: "Buscar por nome do cliente..." },
+  { valor: "cpf_cnpj", rotulo: "CPF/CNPJ", placeholder: "Buscar por CPF ou CNPJ..." },
+  { valor: "email", rotulo: "E-mail", placeholder: "Buscar por e-mail..." },
+];
+
 export default function Clientes() {
   const navigate = useNavigate();
   const confirmar = useConfirm();
   const [pagina, setPagina] = useState<Pagina<Cliente> | null>(null);
   const [busca, setBusca] = useState("");
+  /** Campo em que a busca de texto procura (select ao lado do campo). */
+  const [buscaEm, setBuscaEm] = useState<BuscaClientes>("nome");
   const [carregando, setCarregando] = useState(true);
   const [numeroPagina, setNumeroPagina] = useState(0);
 
@@ -306,11 +319,19 @@ export default function Clientes() {
       setForm((atual) => ({ ...atual, [nome]: evento.target.value })),
   });
 
+  // `campo` usa o padrão da própria chamada: muda o select e chamar `carregar(busca, 0)`
+  // já busca no campo novo, sem depender do estado dentro do useCallback.
   const carregar = useCallback(
-    async (nome: string, paginaAtual: number) => {
+    async (nome: string, paginaAtual: number, campo: BuscaClientes = buscaEm) => {
       setCarregando(true);
       try {
-        const resultado = await listarClientes({ nome: nome.trim() || undefined, page: paginaAtual, size: 20 });
+        const termo = nome.trim();
+        const resultado = await listarClientes({
+          busca: termo || undefined,
+          buscaEm: termo ? campo : undefined,
+          page: paginaAtual,
+          size: 20,
+        });
         setPagina(resultado);
         setNumeroPagina(resultado.page.number);
       } catch (erro) {
@@ -324,6 +345,7 @@ export default function Clientes() {
         setCarregando(false);
       }
     },
+	// eslint-disable-next-line react-hooks/exhaustive-deps -- campo = buscaEm le o estado na hora da chamada
     [navigate],
   );
 
@@ -529,6 +551,9 @@ export default function Clientes() {
     }
   };
 
+  const campoBuscaPlaceholder =
+    CAMPOS_BUSCA.find((opcao) => opcao.valor === buscaEm)?.placeholder ?? CAMPOS_BUSCA[0].placeholder;
+
   const clientes = pagina?.content ?? [];
   const total = pagina?.page.totalElements ?? 0;
   const primeiro = pagina?.page.first ?? true;
@@ -551,16 +576,36 @@ export default function Clientes() {
         }
       />
 
-      {/* Busca por nome — mesmo padrão da tela legada: ícone dentro do campo */}
-      <form onSubmit={buscar} className="relative mb-2">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar cliente por nome..."
-          aria-label="Buscar cliente por nome"
-          className="pl-9"
-        />
+      {/* Busca com TIPO (mesmo estilo da lista de contratos): escolhe onde procurar —
+          nome, CPF/CNPJ ou e-mail — e digita o texto. */}
+      <form onSubmit={buscar} className="flex items-center gap-2 mb-2">
+        <select
+          aria-label="Tipo de busca"
+          value={buscaEm}
+          onChange={(evento) => {
+            const novoCampo = evento.target.value as BuscaClientes;
+            setBuscaEm(novoCampo);
+            if (timerBusca.current) window.clearTimeout(timerBusca.current);
+            carregar(busca, 0, novoCampo);
+          }}
+          className="h-10 w-40 shrink-0 rounded-md border border-input bg-background px-3 text-sm"
+        >
+          {CAMPOS_BUSCA.map((opcao) => (
+            <option key={opcao.valor} value={opcao.valor}>
+              {opcao.rotulo}
+            </option>
+          ))}
+        </select>
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder={campoBuscaPlaceholder}
+            aria-label={campoBuscaPlaceholder}
+            className="pl-9"
+          />
+        </div>
       </form>
 
       {carregando && !pagina ? (
@@ -571,7 +616,7 @@ export default function Clientes() {
           title={busca ? "Nenhum cliente encontrado" : "Nenhum cliente cadastrado"}
           description={
             busca
-              ? "Tente outro nome ou limpe a busca."
+              ? "Tente outro termo ou troque o tipo de busca."
               : "Cadastre o primeiro cliente para começar a usar o módulo."
           }
           action={{ label: "Novo cliente", onClick: abrirNovo }}

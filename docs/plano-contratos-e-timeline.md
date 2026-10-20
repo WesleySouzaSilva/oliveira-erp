@@ -154,27 +154,31 @@ não setores. Os 5 setores do seed continuam só como destino de encaminhamento.
 
 ---
 
-## 6. Gap da API
+## 6. Onde está hoje (20/10/2026)
 
-| # | Item | Estado hoje | Esforço |
-| --- | --- | --- | --- |
-| G1 | `GET /contratos` — lista da organização com filtros (`busca`, `clienteId`, `objetoId`, `situacao`, `valorMin/Max`, `aberturaDe/Ate`, `setorId`) e paginação | só por cliente | médio |
-| G2 | DTO de contrato com nomes (`clienteNome`, `objetoNome`, `criadoPorNome`, `setorNome`) para a lista resumida não fazer N+1 | só ids | pequeno |
-| G3 | Tabela `contrato_historico` + gravação em criar/editar/anexar/remover/excluir (com motivo) | não existe | médio |
-| G4 | `GET /contratos/{id}/historico` | não existe | pequeno |
-| G5 | Timeline do contrato = soma das histórias das suas tarefas (unificada) | não existe | médio |
-| G6 | `tarefas_historico` ampliado: `de_usuario_id`, `para_usuario_id`, `setor_id`, `campos` (jsonb), `updated_at` e `acao ∈ {criada, editada, encaminhada, concluida, reaberta}` | só `concluida` | médio |
-| G7 | `GET /tarefas/{id}/historico` (service pronto: falta controller + `TarefaHistoricoDTO`) | método interno, sem rota | pequeno |
-| G8 | `GET /tarefas/movimentacoes` — feed da organização por período/colaborador/ação/setor | não existe | médio |
-| G9 | Permissão `gestor_area` nos catálogos + `objetos` (objetos/categorias que a pessoa atende) no `/auth/me` | não existe | pequeno |
-| G10 | Autorização reutilizável "admin/ceo/gestor com permissão" no service | só `responsavelId`/admin | pequeno |
-| G11 | `POST /clientes/{id}/contratos` com `setorId` → cria as tarefas dos setores e grava o encaminhamento | não existe | médio |
-| G12 | `POST /tarefas/{id}/encaminhar { setorId, membroId?, mensagem? }` + select de encaminhar no front | não existe | médio |
-| G13 | `setor_id` em `contratos_cliente` e em `tarefas` (a tarefa sabe qual setor está respondendo) | não existe | pequeno |
-| G14 | `membro_objetos` (objetos/categorias que a pessoa atende) + `objetos` em `GET/PATCH /membros/{id}` e no `/auth/me` — o escopo de leitura/notificação | não existe | médio |
+Tudo abaixo foi entregue na API (PR **#10**) e no front (PR **#9**):
 
-> G11/G12/G13 entram porque sem eles a timeline nasce quase vazia: a movimentação real é
-> "cadastro → contrato criado → tarefas por setor → encaminhamentos".
+| Item | Estado |
+| --- | --- |
+| `GET /contratos` (carteira geral, paginação + filtros busca/cliente/objeto/situacao/valor/abertura) | entregue |
+| `ContratoResumoDTO` com nomes de cliente, objeto e criador (sem N+1) | entregue |
+| `tarefas_historico` com de/para, setor, diff em `campos` e IP (`V11`) | entregue |
+| `GET /tarefas/{id}/historico` com gate (admin/ceo, responsável, criador ou gestor no escopo) | entregue |
+| Permissão `gestor_area` + escopo por objeto em `membro_objetos` (`V11`) e no `/auth/me` | entregue |
+| `POST /clientes/{id}/contratos` com setores → cria as tarefas do setor e registra o encaminhamento | entregue |
+| `POST /tarefas/{id}/encaminhar` (JSON e multipart com recado e anexos, `V12`) | entregue |
+| `setor_id` em `contratos_cliente` e em `tarefas` | entregue |
+| Tela Contratos Clientes (lista, descrição expansível, busca com tipo, Novo contrato) | entregue |
+| **Histórico do contrato** (tabela própria `contrato_historico` + timeline unificada) | **descartado** (titular, 20/10/2026) |
+
+A **descarta** é decisão, não esquecimento: o histórico do contrato é contado pela trilha das
+tarefas dele (`tarefas.contrato_id`, `V8`) e pela trilha global (`audit_log`, `V14`) — duas
+trilhas que já existem e já são gravadas em toda movimentação.
+
+Fora desta etapa, registrados em
+[`../oliveira-api/docs/PROGRESSO.md`](../../oliveira-api/docs/PROGRESSO.md): o feed agregado
+`GET /tarefas/movimentacoes` (a trilha por tarefa já existe) e a aba *Histórico* da tela de
+Tarefas.
 
 ---
 
@@ -288,6 +292,12 @@ CREATE INDEX ix_membro_objetos_user ON membro_objetos(user_id);
 
 ### Fase 3 — Front: menu Contratos Clientes, detalhe com trilha e aba Histórico
 
+> **20/10/2026 — fora desta etapa.** O que entrou foi a lista de Contratos Clientes
+> (menu, descrição expansível, busca com tipo, Novo contrato, remoção do botão Filtrar).
+> O detalhe em rota própria (`/erp/contratos/:id`), com arquivos e timeline da tarefa, só
+> entra se o titular pedir — hoje a trilha é vista tarefa a tarefa, na janela da própria
+> tarefa.
+
 - **Rota** `/erp/contratos` e `/erp/contratos/:id` em `src/App.tsx` (lazy + `registrarRotas`).
 - **Menu** (`src/components/erp/LayoutErp.tsx`): grupo *Clientes* → *Base* e *Contratos
   Clientes* (decisão 1), este visível para admin/ceo/gestor com o módulo `clientes`.
@@ -360,4 +370,5 @@ valor_max)` ou colunas `valor_min`/`valor_max` em `membro_objetos` — escolher 
 | --- | --- |
 | 15/10/2026 | Aprovado com as respostas 1–9 registradas em §5: menu dentro de Clientes; `gestor_area` como permissão; escopo por setor; exclusão com motivo; timeline sobre a tarefa; descrição expandida na linha; aba *Histórico* dentro de Tarefas; encaminhar + setor de envio já nesta fase; `created_at`/`updated_at` nas tabelas de histórico. Seções 4, 5, 6 e 7 revisadas em cima das respostas. **Pendentes: nenhuma.** |
 | 15/10/2026 (2) | Escopo amarrado na decisão 3: o "setor" de quem atende é o **objeto/categoria** (`tipo_objeto`) — entra a tabela `membro_objetos` no cadastro do usuário (G14), o filtro passa a ser `contratos_cliente.objeto_id` e o `/auth/me` devolve `objetos`. Os 5 setores do workflow continuam só para encaminhar. |
+| 20/10/2026 | Entregue: `GET /contratos` com paginação e filtros, `ContratoResumoDTO`, trilha de tarefa com de/para/diff/IP, encaminhar com recado e anexos, tarefas por setor ao criar o contrato, escopo por objeto e permissão `gestor_area`. **Descartado** o histórico do contrato em tabela própria (a história vive nas trilhas de tarefa e no `audit_log`). Busca com tipo (número, cliente, objeto, descrição) na lista; botão Filtrar removido do header. |
 | 15/10/2026 (3) | Tela Usuários: o carregamento virou independente (`Promise.allSettled`) — API do servidor ainda sem a rota `/usuarios` passa a mostrar o aviso "Cadastro de usuários ainda não publicado" em vez de derrubar setores e objetos. **§8** guarda a observação da **faixa de valor por usuário** (cadastro + redirecionamento de tarefa) para a próxima etapa. |

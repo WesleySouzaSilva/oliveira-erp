@@ -1,5 +1,14 @@
 # Plano — Integrações externas (status central + fluxo manual de reserva)
 
+> **STATUS (20/10/2026): esta é a PRÓXIMA etapa.** As correções das telas e da API estão
+> entregues (PRs #9 e #10, mergeáveis) e as buscas com tipo entraram em Contratos,
+> Clientes, Usuários e Tarefas. O que vem agora é este plano: o módulo
+> `plataforma/integracao` na API + a tela **Ferramentas → Integrações** no front, fechando
+> com a **ViaCEP** ponta a ponta (preenchimento do endereço do cliente com reserva manual).
+> Anotada em 20/10/2026, depois do CEP: **Consulta CNPJ (Conecta gov.br)** — ver a seção
+> própria no fim do documento (acesso exige credencial de órgão público e IP liberado no
+> firewall do SERPRO).
+
 Feature anotada em 19/10/2026 para ETAPA PRÓPRIA (não misturar com a entrega de
 códigos dos tribunais). Objetivo: concentrar num lugar só TODA integração externa
 que o sistema usa (APIs, robôs de scraping, webhooks), saber se cada uma está no

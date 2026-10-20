@@ -57,9 +57,13 @@ com a mensagem personalizada em vez de segurar a requisição.
      API preenche logradouro, bairro, cidade e UF sozinho."
      Advbox — "Sincronização diária de clientes, processos, tarefas e agenda."
      ZapSign — "Envio de documentos para assinatura do cliente."
-2. **Tabela `integracao_status`** (migration nova): snapshot do último
-   resultado por integração (status, mensagem, latência, verificado_em). O
-   `GET /api/v1/integracoes` lê a tabela — tela rápida, sem tocar na rede.
+2. **Duas tabelas (migration nova)**:
+   `integracao` — o CADASTRO do que usamos: `id_provedor`, `url_base`,
+   `descricao_token`, `token_cifrado`, `token_prefixo`, `token_atualizado_em`,
+   `ativo` (ver "Cadastro e segredo do token" abaixo).
+   `integracao_status` — snapshot do último resultado (status, mensagem, latência,
+   verificado_em). O `GET /api/v1/integracoes` lê as duas — tela rápida, sem tocar
+   na rede.
 3. **Fila de verificação — um teste por vez** (decisão do titular, 20/10/2026):
    os testes NÃO rodam todos de uma vez. A tela abre, dispara a fila
    (`POST /api/v1/integracoes/verificar`), e o servidor processa **UMA integração de
@@ -69,11 +73,34 @@ com a mensagem personalizada em vez de segurar a requisição.
    resultado dele.
    O `@Scheduled` de ~10 min continua, mas também varre **em fila** (mesma ordem,
    mesmo um-por-vez) — só para o snapshot não ficar velho quando ninguém abriu a tela.
-4. **Cadastro pela tela**: admin registra a URL/base de cada integração que
-   usamos (e credencial quando houver — gravada no servidor, nunca no front).
+4. **Cadastro pela tela (só admin)**: URL base, descrição do token e o próprio
+   token (cifrado) — ver a seção seguinte.
 5. **Exceção `IntegracaoIndisponivel`** no handler RFC 7807 → HTTP 503 com a
    mensagem personalizada da integração. Chamada externa SEMPRE com timeout
    curto: fora → responde na hora, não trava o fluxo nem a API inteira.
+
+## Cadastro e segredo do token (20/10/2026)
+
+- **URL base cadastrada, código só monta**: admin cadastra a URL BASE da
+  integração, e todo código que chama aquela API monta a partir dela
+  (`{urlBase}/ws/{cep}/json/`, `{urlBase}/api/v1/settings`). Nenhuma URL fica
+  escrita no código — trocar produção por homologação é mudar o cadastro, sem
+  novo build.
+- **`descricao_token`**: campo de texto com o PROCESSO de geração do token — o
+  fluxo (ex.: "OAuth2 client_credentials em /oauth2/jwt-token, expira em 30 min")
+  ou a frase "sem token — a API é pública e responde direto". Serve para quem
+  for renovar a credencial não precisar voltar ao fornecedor nem abrir o código.
+- **Token cifrado, e só a API decifra**: o token chega em texto pelo
+  `POST/PATCH /integracoes/{id}` (por HTTPS) e a API **cifra antes de gravar**
+  (AES-GCM 256 — o mesmo padrão e a mesma propriedade do TOTP:
+  `api.segredo.integracao-chave`, por variável de ambiente em produção). Na hora
+  de usar, o provedor decifra em memória; **nenhum endpoint devolve o token** —
+  a resposta traz só o prefixo e quando foi atualizado. Nem o admin vê o token
+  depois de salvo (igual aos códigos dos tribunais).
+- **Endpoints**: `POST /integracoes` e `PATCH /integracoes/{id}` (admin) aceitam
+  `urlBase`, `descricaoToken` e `token` (write-only, opcional);
+  `GET /integracoes` devolve `urlBase`, `descricaoToken`, `tokenPrefixo` e
+  `tokenAtualizadoEm` — nunca o token.
 
 ## Desenho aprovado — front (oliveira-erp)
 
@@ -147,11 +174,13 @@ CEP. Catálogo: https://www.gov.br/conecta/catalogo/apis/consulta-cnpj
 
 ## Ordem de execução (etapa atual)
 
-- [ ] V19 `integracao_status` + `IntegracaoProvedor` + registry + **fila de
+- [ ] V19 `integracao` (url_base, descricao_token, token_cifrado) +
+      `integracao_status` + `IntegracaoProvedor` + registry + **fila de
       verificação (um teste por vez)** + `@Scheduled` varrendo em fila
-- [ ] `GET /integracoes` (snapshot lido da tabela) · `POST /integracoes/verificar`
-      (dispara a fila, **sem gate**) · `POST /integracoes` + `PATCH/DELETE /{id}`
-      (credencial, só admin)
+- [ ] `GET /integracoes` (snapshot lido da tabela, sem nunca devolver o token) ·
+      `POST /integracoes/verificar` (dispara a fila, **sem gate**) ·
+      `POST /integracoes` + `PATCH/DELETE /{id}` (cadastro, só admin; o token
+      é cifrado antes de gravar)
 - [ ] Tela **Ferramentas → Integrações**: **sem permissão nenhuma** (qualquer
       usuário autenticado abre e dispara), cards com **verde ✓ / vermelho ✗ /
       cinza ·**, atualizando um a um conforme a fila entrega cada resultado
@@ -177,3 +206,8 @@ CEP. Catálogo: https://www.gov.br/conecta/catalogo/apis/consulta-cnpj
 5. **Descrição de uso obrigatória**: toda integração entra no registry com a
    linha de onde ela é usada no sistema (tela + o que ela faz ali). Sem isso o
    card não informa nada para quem não construiu o sistema.
+6. **URL base no cadastro**: a URL base é cadastrada na tela e o código só monta
+   a partir dela — nenhuma URL hardcodada (20/10/2026).
+7. **Token cifrado**: o token vai para o banco cifrado (AES-GCM 256, mesma chave
+   do TOTP) e nunca volta em resposta de endpoint; o provedor decifra em memória
+   na hora de chamar (20/10/2026).

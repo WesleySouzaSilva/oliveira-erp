@@ -53,8 +53,15 @@ com a mensagem personalizada em vez de segurar a requisição.
 2. **Tabela `integracao_status`** (migration nova): snapshot do último
    resultado por integração (status, mensagem, latência, verificado_em). O
    `GET /api/v1/integracoes` lê a tabela — tela rápida, sem tocar na rede.
-3. **`@Scheduled`** a cada ~10 min sonda todas em paralelo (timeout de 8 s
-   cada) e grava o snapshot.
+3. **Fila de verificação — um teste por vez** (decisão do titular, 20/10/2026):
+   os testes NÃO rodam todos de uma vez. A tela abre, dispara a fila
+   (`POST /api/v1/integracoes/verificar`), e o servidor processa **UMA integração de
+   cada vez**, na ordem da fila (cada uma com timeout de 8 s) — assim não chamamos
+   todas as APIs externas na mesma batida. `GET /api/v1/integracoes` lê o snapshot
+   (`integracao_status`) e a tela vai pintando cada card conforme a fila entrega o
+   resultado dele.
+   O `@Scheduled` de ~10 min continua, mas também varre **em fila** (mesma ordem,
+   mesmo um-por-vez) — só para o snapshot não ficar velho quando ninguém abriu a tela.
 4. **Cadastro pela tela**: admin registra a URL/base de cada integração que
    usamos (e credencial quando houver — gravada no servidor, nunca no front).
 5. **Exceção `IntegracaoIndisponivel`** no handler RFC 7807 → HTTP 503 com a
@@ -63,10 +70,21 @@ com a mensagem personalizada em vez de segurar a requisição.
 
 ## Desenho aprovado — front (oliveira-erp)
 
-6. Menu **Ferramentas → Integrações**: cards com badge "No ar / Fora do ar /
-   Não configurada", latência, última verificação e o motivo. **Visualização
-   para TODOS os usuários** (cada um enxerga o que depende do seu dia a dia).
-7. Cadastro/edição de integração e botão "Verificar agora": **só admin**.
+6. Menu **Ferramentas → Integrações**: cards com o nome, a categoria e o
+   resultado visual do teste:
+     **verde ✓** no ar (respondeu dentro do esperado)
+     **vermelho ✗** fora do ar (com o motivo e a latência)
+     **cinza ·** não configurada (falta credencial)
+   Cada card mostra também a última verificação e a latência.
+7. **Sem controle de permissão nenhuma nesta tela** (decisão do titular,
+   20/10/2026): qualquer usuário autenticado abre, vê o resultado e dispara a
+   verificação — o botão "Verificar agora" está liberado para todo mundo (o
+   teste só bate na API de terceiros, nada de escrita). O cadastro/edição de
+   credencial continua admin, porque é segredo.
+8. Ao abrir a tela, o front dispara a fila e **atualiza os cards um a um**
+   conforme cada teste termina (polling de ~2 s em `GET /integracoes` enquanto a
+   fila roda; para quando não resta teste pendente). Abrir a tela de novo não
+   empilha fila: se já houver uma rodando, ela só acompanha.
 
 ## Primeira integração: ViaCEP
 
@@ -112,14 +130,30 @@ CEP. Catálogo: https://www.gov.br/conecta/catalogo/apis/consulta-cnpj
   sem conectar. Ou seja, nem dá para sondar sem antes existir liberação de saída
   na rede e IP cadastrado no SERPRO.
 
-## Ordem de execução (etapa futura)
+## Ordem de execução (etapa atual)
 
-- [ ] V19 `integracao_status` + `IntegracaoProvedor` + registry + scheduler
-- [ ] `GET /integracoes` (todos) · `POST /integracoes` + `/{id}/verificar` (admin)
-- [ ] Tela Ferramentas → Integrações (leitura todos; gestão admin)
+- [ ] V19 `integracao_status` + `IntegracaoProvedor` + registry + **fila de
+      verificação (um teste por vez)** + `@Scheduled` varrendo em fila
+- [ ] `GET /integracoes` (snapshot lido da tabela) · `POST /integracoes/verificar`
+      (dispara a fila, **sem gate**) · `POST /integracoes` + `PATCH/DELETE /{id}`
+      (credencial, só admin)
+- [ ] Tela **Ferramentas → Integrações**: **sem permissão nenhuma** (qualquer
+      usuário autenticado abre e dispara), cards com **verde ✓ / vermelho ✗ /
+      cinza ·**, atualizando um a um conforme a fila entrega cada resultado
 - [ ] ViaCEP: sonda + preenchimento automático no endereço do cliente com
       fallback manual (primeira integração ponta a ponta)
 - [ ] Migrar as demais integrações conforme os módulos saem do Supabase
       (ADVBOX, DataJud, DJEN, ZapSign...), cada uma com sua mensagem de reserva
 - [ ] CNPJ: sonda da Consulta CNPJ (Conecta gov.br) anotada no registry +
       preenchimento do cadastro de cliente por API pública, com reserva manual
+
+## Decisões do titular (20/10/2026)
+
+1. **Fila, não bateria**: ao abrir a tela de Integrações os testes rodam **um de
+   cada vez**, na ordem da fila — não chamamos todas as APIs externas na mesma
+   batida.
+2. **Visual**: cada integração responde com um ícone — **verde** no ar,
+   **vermelho** com falha (e o motivo), **cinza** não configurada.
+3. **Tela sem permissão**: a tela é visível e operável por **todos os usuários
+   autenticados**, sem controle por papel ou módulo. Só o cadastro de credencial
+   continua admin (é segredo).

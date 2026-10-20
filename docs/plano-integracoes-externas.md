@@ -68,6 +68,41 @@ com a mensagem personalizada em vez de segurar a requisição.
 - Mensagem de indisponibilidade: "Consulta de CEP (ViaCEP) indisponível no
   momento — preencha o endereço manualmente."
 
+## Próxima anotada: Consulta CNPJ — Conecta gov.br (SERPRO)
+
+Anotada em 20/10/2026, ainda **sem implementação** — só entra na fila depois do
+CEP. Catálogo: https://www.gov.br/conecta/catalogo/apis/consulta-cnpj
+(Swagger: `.../apis/consulta-cnpj/swagger_api_cnpj.md/swagger_view`).
+
+- **O que entrega**: dados não sigilosos da Receita Federal em três serviços que
+  só diferem pela quantidade de campos — Básica (identificação, situação
+  cadastral, CNAE, endereço), QSA (quadro de sócios e administradores) e Empresa
+  (tudo, detalhado).
+- **Endpoints de produção** (base `https://apigateway.conectagov.estaleiro.serpro.gov.br`):
+  `/api-cnpj-basica/v2/basica/`, `/api-cnpj-qsa/v2/qsa/`,
+  `/api-cnpj-empresa/v2/empresa/`.
+- **Homologação** (base `https://h-apigateway.conectagov.np.estaleiro.serpro.gov.br`):
+  mesmos caminhos `/v2/...`; CNPJs de teste: `90026000000153`, `30202699000133`,
+  `90009736000113`, `10422241000182` (e os alfanuméricos `6TS1HJ0S000170`,
+  `B2SLG07D000115`, `H4KR4PKR000173`, `4J1ZE13P000140`, `7EXHVL29000111`).
+- **Autenticação**: OAuth2 client_credentials. `POST {base}/oauth2/jwt-token`,
+  header `Authorization: Basic base64(client_id:client_secret)`, corpo
+  `grant_type=client_credentials` → `access_token` para as consultas.
+- **Dois bloqueios que não são de código**: (1) a API é liberada para **órgãos e
+  entidades da Administração Pública** (Portaria RFB 1384/2016) — escritório
+  privado provavelmente não obtém credencial; (2) é preciso **cadastrar os IPs do
+  consumidor** para o firewall do SERPRO, o que conflita com edge function
+  (IPs rotativos): só funcionaria chamando de um servidor com IP fixo.
+- **Plano**: como sonda/registro, entra no registry igual às outras (id
+  `conecta_cnpj`, categoria Cadastro, sem chave = "Não configurada", mensagem
+  explicando a exigência de IP liberado). Para uso real no cadastro de cliente,
+  preferir fallback público (BrasilAPI/ReceitaWS) e manter o Conecta anotado como
+  opção oficial — o preenchimento manual continua sendo a reserva.
+- **Teste de alcance (20/10/2026)**: do PC do escritório o DNS resolve
+  (`189.9.168.140`) mas o TCP 443 não completa — `curl` termina com HTTP 000,
+  sem conectar. Ou seja, nem dá para sondar sem antes existir liberação de saída
+  na rede e IP cadastrado no SERPRO.
+
 ## Ordem de execução (etapa futura)
 
 - [ ] V19 `integracao_status` + `IntegracaoProvedor` + registry + scheduler
@@ -77,3 +112,5 @@ com a mensagem personalizada em vez de segurar a requisição.
       fallback manual (primeira integração ponta a ponta)
 - [ ] Migrar as demais integrações conforme os módulos saem do Supabase
       (ADVBOX, DataJud, DJEN, ZapSign...), cada uma com sua mensagem de reserva
+- [ ] CNPJ: sonda da Consulta CNPJ (Conecta gov.br) anotada no registry +
+      preenchimento do cadastro de cliente por API pública, com reserva manual

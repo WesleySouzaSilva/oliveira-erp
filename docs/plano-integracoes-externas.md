@@ -46,10 +46,17 @@ com a mensagem personalizada em vez de segurar a requisição.
 ## Desenho aprovado — API (oliveira-api)
 
 1. **`IntegracaoProvedor`** (interface): cada integração é um `@Component` que
-   declara `id`, `nome`, `categoria`, `descricao`, `urlDocs`, se tem a chave
-   configurada e `verificar()` → status + mensagem do motivo + latência. O
-   Spring injeta `List<IntegracaoProvedor>` no registry — **nova integração =
-   1 classe nova**, nada de mexer em controller/tabela.
+   declara `id`, `nome`, `categoria`, `descricao`, **`ondeEhUsada`** (onde no
+   sistema ela faz falta — ver abaixo), `urlDocs`, se tem a chave configurada e
+   `verificar()` → status + mensagem do motivo + latência. O Spring injeta
+   `List<IntegracaoProvedor>` no registry — **nova integração = 1 classe nova**,
+   nada de mexer em controller/tabela.
+   `ondeEhUsada` é obrigatório: o card precisa dizer para QUEM olha a tela o que
+   quebra se aquela API cair. Exemplos:
+     ViaCEP — "Cadastro de clientes → bloco de endereço: ao digitar o CEP a
+     API preenche logradouro, bairro, cidade e UF sozinho."
+     Advbox — "Sincronização diária de clientes, processos, tarefas e agenda."
+     ZapSign — "Envio de documentos para assinatura do cliente."
 2. **Tabela `integracao_status`** (migration nova): snapshot do último
    resultado por integração (status, mensagem, latência, verificado_em). O
    `GET /api/v1/integracoes` lê a tabela — tela rápida, sem tocar na rede.
@@ -75,7 +82,9 @@ com a mensagem personalizada em vez de segurar a requisição.
      **verde ✓** no ar (respondeu dentro do esperado)
      **vermelho ✗** fora do ar (com o motivo e a latência)
      **cinza ·** não configurada (falta credencial)
-   Cada card mostra também a última verificação e a latência.
+   Cada card mostra também a última verificação, a latência e a linha de
+   **onde aquela integração é usada** (o `ondeEhUsada` do provedor) — é o que
+   transforma o card em informação para o usuário comum.
 7. **Sem controle de permissão nenhuma nesta tela** (decisão do titular,
    20/10/2026): qualquer usuário autenticado abre, vê o resultado e dispara a
    verificação — o botão "Verificar agora" está liberado para todo mundo (o
@@ -88,6 +97,10 @@ com a mensagem personalizada em vez de segurar a requisição.
 
 ## Primeira integração: ViaCEP
 
+- **Onde é usada**: tela de **cadastro de clientes → bloco de endereço** — ao
+  digitar o CEP a API é consultada e traz o endereço completo (logradouro,
+  bairro, cidade e UF), gravando junto os códigos IBGE da V16. É a linha que
+  aparece no card da integração.
 - URL: `https://viacep.com.br/ws/{cep}/json/` (API pública, sem chave).
 - Sonda: CEP válido de teste (ex.: 01001-000) esperando `ok: true`.
 - Uso no cadastro de cliente (endereços): preencher automaticamente quando OK;
@@ -125,6 +138,8 @@ CEP. Catálogo: https://www.gov.br/conecta/catalogo/apis/consulta-cnpj
   explicando a exigência de IP liberado). Para uso real no cadastro de cliente,
   preferir fallback público (BrasilAPI/ReceitaWS) e manter o Conecta anotado como
   opção oficial — o preenchimento manual continua sendo a reserva.
+- **Onde seria usada**: cadastro de clientes → ao digitar o CNPJ, trazer razão
+  social, situação cadastral, CNAE e endereço (é o que o card diria).
 - **Teste de alcance (20/10/2026)**: do PC do escritório o DNS resolve
   (`189.9.168.140`) mas o TCP 443 não completa — `curl` termina com HTTP 000,
   sem conectar. Ou seja, nem dá para sondar sem antes existir liberação de saída
@@ -156,4 +171,9 @@ CEP. Catálogo: https://www.gov.br/conecta/catalogo/apis/consulta-cnpj
    **vermelho** com falha (e o motivo), **cinza** não configurada.
 3. **Tela sem permissão**: a tela é visível e operável por **todos os usuários
    autenticados**, sem controle por papel ou módulo. Só o cadastro de credencial
-   continua admin (é segredo).
+   continua admin, porque é segredo.
+4. **Cadastro de nova integração: só admin** (confirmado em 20/10/2026). O
+   usuário comum só VÊ se cada uma está no ar — verde, vermelho ou cinza.
+5. **Descrição de uso obrigatória**: toda integração entra no registry com a
+   linha de onde ela é usada no sistema (tela + o que ela faz ali). Sem isso o
+   card não informa nada para quem não construiu o sistema.

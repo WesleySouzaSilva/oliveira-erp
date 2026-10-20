@@ -6,16 +6,13 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   FileSignature,
-  Filter,
   Plus,
   Search,
-  X,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ListSkeleton } from "@/components/ui/loaders";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -36,14 +33,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ErroApi, mensagemDeErro } from "@/lib/api/http";
-import { listarContratosGeral, type ContratoResumo, type FiltroContratos } from "@/lib/api/contratos";
-import { listarTiposObjeto, type TipoObjeto } from "@/lib/api/objetos";
+import { listarContratosGeral, type BuscaContratos, type ContratoResumo } from "@/lib/api/contratos";
 import { DetalheContrato } from "@/components/erp/DetalheContrato";
 import { ContratosClienteDialog } from "@/components/erp/ContratosClienteDialog";
 import { ClienteBusca, type ClienteEscolhido } from "@/components/erp/ClienteBusca";
 import { temDetalhes } from "@/lib/contratoDetalhes";
 import type { Pagina } from "@/lib/api/pagina";
-import { textoParaValor } from "@/lib/moeda";
 
 /**
  * Contratos Clientes — a lista geral de contratos do escritório (menu Clientes →
@@ -57,23 +52,16 @@ import { textoParaValor } from "@/lib/moeda";
  * admin/ceo vê todos os contratos; o resto vê só os objetos que atende (escopo da API).
  */
 
-interface Filtros {
-  objetoId: string;
-  situacao: string;
-  valorMin: string;
-  valorMax: string;
-  aberturaDe: string;
-  aberturaAte: string;
-}
-
-const FILTROS_VAZIOS: Filtros = {
-  objetoId: "",
-  situacao: "",
-  valorMin: "",
-  valorMax: "",
-  aberturaDe: "",
-  aberturaAte: "",
-};
+/**
+ * Campos em que a busca de texto procura — o select ao lado do campo (decisão do titular,
+ * 20/10/2026): número, cliente, objeto ou descrição. A API recebe o campo em `buscaEm`.
+ */
+const CAMPOS_BUSCA: { valor: BuscaContratos; rotulo: string; placeholder: string }[] = [
+  { valor: "numero", rotulo: "Número", placeholder: "Buscar por número do contrato..." },
+  { valor: "cliente", rotulo: "Cliente", placeholder: "Buscar por nome do cliente..." },
+  { valor: "objeto", rotulo: "Objeto", placeholder: "Buscar por objeto (categoria)..." },
+  { valor: "descricao", rotulo: "Descrição", placeholder: "Buscar pela descrição..." },
+];
 
 const dataBr = (iso: string | null | undefined): string =>
   iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("pt-BR") : "—";
@@ -86,9 +74,8 @@ const moeda = (valor: number | null | undefined): string =>
 export default function Contratos() {
   const [pagina, setPagina] = useState<Pagina<ContratoResumo> | null>(null);
   const [busca, setBusca] = useState("");
-  const [filtros, setFiltros] = useState<Filtros>(FILTROS_VAZIOS);
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
-  const [tipos, setTipos] = useState<TipoObjeto[]>([]);
+  /** Campo em que a busca de texto procura — o select ao lado do campo. */
+  const [buscaEm, setBuscaEm] = useState<BuscaContratos>("numero");
   const [carregando, setCarregando] = useState(true);
   const [numeroPagina, setNumeroPagina] = useState(0);
   /** Linhas com a descrição aberta (a descrição só existe depois da seta). */
@@ -109,19 +96,13 @@ export default function Contratos() {
   const primeiraBusca = useRef(true);
   const timerBusca = useRef<number | null>(null);
 
-  const carregar = useCallback(async (termo: string, paginaAtual: number, f: Filtros) => {
+  const carregar = useCallback(async (termo: string, paginaAtual: number, campo: BuscaContratos) => {
     setCarregando(true);
     try {
       const resultado = await listarContratosGeral({
         busca: termo.trim() || undefined,
-        objetoId: f.objetoId || undefined,
-        situacao: f.situacao || undefined,
-        // Mesmo parse em centavos do form de contrato (src/lib/moeda.ts) — dinheiro
-        // não passa por float quebrado. Inválido (NaN) fica de fora do filtro.
-        valorMin: Number.isFinite(textoParaValor(f.valorMin)) ? textoParaValor(f.valorMin) : undefined,
-        valorMax: Number.isFinite(textoParaValor(f.valorMax)) ? textoParaValor(f.valorMax) : undefined,
-        aberturaDe: f.aberturaDe || undefined,
-        aberturaAte: f.aberturaAte || undefined,
+        // o campo escolhido no select viaja junto; sem texto não há o que procurar
+        buscaEm: termo.trim() ? campo : undefined,
         page: paginaAtual,
         size: 50,
       });
@@ -143,10 +124,7 @@ export default function Contratos() {
   }, []);
 
   useEffect(() => {
-    carregar("", 0, FILTROS_VAZIOS);
-    listarTiposObjeto()
-      .then(setTipos)
-      .catch(() => setTipos([])); // select sem tipos ainda não quebra a tela
+    carregar("", 0, "numero");
   }, [carregar]);
 
   // Busca com debounce (mesmo padrão da tela de Clientes).
@@ -156,19 +134,11 @@ export default function Contratos() {
       return;
     }
     if (timerBusca.current) window.clearTimeout(timerBusca.current);
-    timerBusca.current = window.setTimeout(() => carregar(busca, 0, filtros), 300);
+    timerBusca.current = window.setTimeout(() => carregar(busca, 0, buscaEm), 300);
     return () => {
       if (timerBusca.current) window.clearTimeout(timerBusca.current);
     };
-  }, [busca, filtros, carregar]);
-
-  const mudarFiltro = (campo: keyof Filtros, valor: string) =>
-    setFiltros((atual) => ({ ...atual, [campo]: valor }));
-
-  const limparFiltros = () => {
-    setFiltros(FILTROS_VAZIOS);
-    carregar(busca, 0, FILTROS_VAZIOS);
-  };
+  }, [busca, buscaEm, carregar]);
 
   const alternarLinha = (id: string) =>
     setExpandidos((atual) => {
@@ -186,21 +156,18 @@ export default function Contratos() {
   const total = pagina?.page.totalElements ?? 0;
   const primeiro = pagina?.page.first ?? true;
   const ultimo = pagina?.page.last ?? true;
-  const temFiltroAtivo = Object.values(filtros).some((valor) => valor !== "");
+  /** Opção selecionada no select de tipo de busca (o placeholder muda junto). */
+  const campoBusca = CAMPOS_BUSCA.find((opcao) => opcao.valor === buscaEm) ?? CAMPOS_BUSCA[0];
 
   return (
     <div className="p-4 sm:p-6 lg:p-10 space-y-6">
       <PageHeader
         icon={FileSignature}
         title="Contratos Clientes"
-        subtitle={`${total} contrato${total === 1 ? "" : "s"}${temFiltroAtivo ? " (com filtro)" : ""}`}
+        subtitle={`${total} contrato${total === 1 ? "" : "s"}${busca.trim() ? " (com filtro)" : ""}`}
         breadcrumb={[{ label: "Módulos na API" }, { label: "Clientes" }, { label: "Contratos Clientes" }]}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setFiltrosAbertos((aberto) => !aberto)}>
-              <Filter className="w-4 h-4 mr-1" /> Filtrar
-              {temFiltroAtivo && <span className="ml-1 w-2 h-2 rounded-full bg-accent" />}
-            </Button>
             {/* Atalho (19/10/2026): o form de contrato é por cliente — primeiro a
                 busca de cliente, depois o mesmo form do cadastro. */}
             <Button size="sm" onClick={() => setBuscandoCliente(true)}>
@@ -211,119 +178,44 @@ export default function Contratos() {
       />
 
       {/* Busca: número, cliente ou descrição (o servidor faz o LIKE) */}
+      {/* Busca com TIPO: escolhe onde procurar (número, cliente, objeto ou descrição) e
+          digita o texto — o servidor faz o LIKE no campo escolhido. */}
       <form
         onSubmit={(evento) => {
           evento.preventDefault();
           if (timerBusca.current) window.clearTimeout(timerBusca.current);
-          carregar(busca, 0, filtros);
+          carregar(busca, 0, buscaEm);
         }}
-        className="relative"
+        className="flex items-center gap-2"
       >
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          value={busca}
-          onChange={(evento) => setBusca(evento.target.value)}
-          placeholder="Buscar por número, cliente ou descrição..."
-          aria-label="Buscar contrato por número, cliente ou descrição"
-          className="pl-9"
-        />
+        <select
+          aria-label="Tipo de busca"
+          value={buscaEm}
+          onChange={(evento) => {
+            const novoCampo = evento.target.value as BuscaContratos;
+            setBuscaEm(novoCampo);
+            if (timerBusca.current) window.clearTimeout(timerBusca.current);
+            carregar(busca, 0, novoCampo);
+          }}
+          className="h-10 w-40 shrink-0 rounded-md border border-input bg-background px-3 text-sm"
+        >
+          {CAMPOS_BUSCA.map((opcao) => (
+            <option key={opcao.valor} value={opcao.valor}>
+              {opcao.rotulo}
+            </option>
+          ))}
+        </select>
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            value={busca}
+            onChange={(evento) => setBusca(evento.target.value)}
+            placeholder={campoBusca.placeholder}
+            aria-label={campoBusca.placeholder}
+            className="pl-9"
+          />
+        </div>
       </form>
-
-      {filtrosAbertos && (
-        <Card className="p-4 space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground" htmlFor="contratos-filtro-objeto">
-                Objeto (categoria)
-              </Label>
-              <select
-                id="contratos-filtro-objeto"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={filtros.objetoId}
-                onChange={(evento) => mudarFiltro("objetoId", evento.target.value)}
-              >
-                <option value="">Todos</option>
-                {tipos.map((tipo) => (
-                  <option key={tipo.id} value={tipo.id}>
-                    {tipo.tipoObjeto}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground" htmlFor="contratos-filtro-situacao">
-                Situação
-              </Label>
-              <select
-                id="contratos-filtro-situacao"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={filtros.situacao}
-                onChange={(evento) => mudarFiltro("situacao", evento.target.value)}
-              >
-                <option value="">Todas</option>
-                <option value="ativo">Ativo</option>
-                <option value="concluido">Concluído</option>
-                <option value="encerrado">Encerrado</option>
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground" htmlFor="contratos-filtro-valorMin">
-                Valor mínimo (R$)
-              </Label>
-              <Input
-                id="contratos-filtro-valorMin"
-                type="number"
-                step="0.01"
-                min="0"
-                value={filtros.valorMin}
-                onChange={(evento) => mudarFiltro("valorMin", evento.target.value)}
-                placeholder="Ex.: 1000,00"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground" htmlFor="contratos-filtro-valorMax">
-                Valor máximo (R$)
-              </Label>
-              <Input
-                id="contratos-filtro-valorMax"
-                type="number"
-                step="0.01"
-                min="0"
-                value={filtros.valorMax}
-                onChange={(evento) => mudarFiltro("valorMax", evento.target.value)}
-                placeholder="Ex.: 50000,00"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground" htmlFor="contratos-filtro-aberturaDe">
-                Abertura de
-              </Label>
-              <Input
-                id="contratos-filtro-aberturaDe"
-                type="date"
-                value={filtros.aberturaDe}
-                onChange={(evento) => mudarFiltro("aberturaDe", evento.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground" htmlFor="contratos-filtro-aberturaAte">
-                Abertura até
-              </Label>
-              <Input
-                id="contratos-filtro-aberturaAte"
-                type="date"
-                value={filtros.aberturaAte}
-                onChange={(evento) => mudarFiltro("aberturaAte", evento.target.value)}
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={limparFiltros}>
-              <X className="w-4 h-4 mr-1" /> Limpar filtros
-            </Button>
-          </div>
-        </Card>
-      )}
 
       {!carregando && contratos.length > 1 && (
         <div className="flex items-center gap-1">
@@ -341,10 +233,10 @@ export default function Contratos() {
       ) : contratos.length === 0 ? (
         <EmptyState
           icon={FileSignature}
-          title={busca || temFiltroAtivo ? "Nenhum contrato encontrado" : "Nenhum contrato"}
+          title={busca.trim() ? "Nenhum contrato encontrado" : "Nenhum contrato"}
           description={
-            busca || temFiltroAtivo
-              ? "Tente outro termo ou limpe os filtros."
+            busca.trim()
+              ? "Tente outro termo ou troque o tipo de busca."
               : "Os contratos dos clientes aparecem aqui assim que forem criados."
           }
         />
@@ -435,7 +327,7 @@ export default function Contratos() {
                 size="sm"
                 variant="outline"
                 disabled={primeiro || carregando}
-                onClick={() => carregar(busca, Math.max(numeroPagina - 1, 0), filtros)}
+                onClick={() => carregar(busca, Math.max(numeroPagina - 1, 0), buscaEm)}
               >
                 Anterior
               </Button>
@@ -443,7 +335,7 @@ export default function Contratos() {
                 size="sm"
                 variant="outline"
                 disabled={ultimo || carregando}
-                onClick={() => carregar(busca, numeroPagina + 1, filtros)}
+                onClick={() => carregar(busca, numeroPagina + 1, buscaEm)}
               >
                 Próxima
               </Button>
@@ -501,7 +393,7 @@ export default function Contratos() {
           clienteId={clienteNovo.id}
           clienteNome={clienteNovo.nome}
           iniciandoComFormulario
-          onContratoCriado={() => carregar(busca, 0, filtros)}
+          onContratoCriado={() => carregar(busca, 0, buscaEm)}
         />
       )}
     </div>

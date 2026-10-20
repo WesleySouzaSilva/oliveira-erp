@@ -149,9 +149,14 @@ export interface ContratoResumo {
   updatedAt?: string;
 }
 
+/** Onde a busca de texto procura — o "tipo de busca" do select da tela de contratos. */
+export type BuscaContratos = "numero" | "cliente" | "objeto" | "descricao";
+
 export interface FiltroContratos {
   /** Numero, descricao ou nome do cliente (parcial). */
   busca?: string;
+  /** Campo em que o texto e procurado; sem ele a API procura em numero e descricao. */
+  buscaEm?: BuscaContratos;
   clienteId?: string;
   objetoId?: string;
   situacao?: string;
@@ -169,6 +174,7 @@ export function listarContratosGeral(filtro: FiltroContratos = {}): Promise<Pagi
   return apiFetch<Pagina<ContratoResumo>>("/contratos", {
     params: {
       busca: filtro.busca,
+      buscaEm: filtro.buscaEm,
       clienteId: filtro.clienteId,
       objetoId: filtro.objetoId,
       situacao: filtro.situacao,

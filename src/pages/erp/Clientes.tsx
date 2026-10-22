@@ -3,6 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Check, ChevronsUpDown, FileSignature, ListChecks, Pencil, Plus, Save, Search, Trash2, UserPlus, Users, X } from "lucide-react";
 import { ContratosClienteDialog } from "@/components/erp/ContratosClienteDialog";
+import { ContratosBancoClienteDialog } from "@/components/erp/ContratosBancoClienteDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -294,6 +301,8 @@ export default function Clientes() {
   /** Cliente cujos contratos estão abertos no dialog (e se o form de novo já abre). */
   const [contratosDe, setContratosDe] = useState<Cliente | null>(null);
   const [formContratoAberto, setFormContratoAberto] = useState(false);
+  /** Cliente cujos contratos COM O BANCO estão abertos no dialog (correção 4). */
+  const [contratosBancoDe, setContratosBancoDe] = useState<Cliente | null>(null);
   const [form, setForm] = useState<Formulario>(FORM_VAZIO);
   /** Múltiplos telefones/e-mails/endereços por cliente (contrato 16/10/2026) — 1ª linha
    * de cada bloco já nasce presente e marcada como principal. */
@@ -674,16 +683,32 @@ export default function Clientes() {
                         >
                           <ListChecks className="w-4 h-4 mr-1" /> Nova tarefa
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setContratosDe(cliente);
-                            setFormContratoAberto(false);
-                          }}
-                        >
-                          <FileSignature className="w-4 h-4 mr-1" /> Contratos
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              title={`Contratos de ${cliente.nome}`}
+                            >
+                              <FileSignature className="w-4 h-4 mr-1" /> Contratos
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {/* Duas visões (correção 4): com o ESCRITÓRIO (dialog antigo,
+                                inalterado) e com o BANCO (dialog novo, client-scoped) */}
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                setContratosDe(cliente);
+                                setFormContratoAberto(false);
+                              }}
+                            >
+                              Com o escritório
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setContratosBancoDe(cliente)}>
+                              Com o banco
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         <Button size="sm" variant="ghost" onClick={() => abrirEdicao(cliente)}>
                           <Pencil className="w-4 h-4 mr-1" /> Editar
                         </Button>
@@ -1111,6 +1136,18 @@ export default function Clientes() {
           clienteNome={contratosDe.nome}
           iniciandoComFormulario={formContratoAberto}
           onContratoCriado={() => void carregar(busca, numeroPagina)}
+        />
+      )}
+
+      {/* Contratos COM O BANCO do cliente (correção 4) — dialog novo, client-scoped */}
+      {contratosBancoDe && (
+        <ContratosBancoClienteDialog
+          aberto={true}
+          onAbertoChange={(aberto) => {
+            if (!aberto) setContratosBancoDe(null);
+          }}
+          clienteId={contratosBancoDe.id}
+          clienteNome={contratosBancoDe.nome}
         />
       )}
     </div>

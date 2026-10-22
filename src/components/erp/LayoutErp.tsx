@@ -1,7 +1,7 @@
 import { NavLink, Navigate, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  Briefcase, Building2, FileSignature, FolderTree, KeyRound, Layers, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ScrollText, ShieldCheck, UserCog, Users, Waypoints, X,
+  Briefcase, Building2, FileSignature, FolderTree, KeyRound, Landmark, Layers, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ScrollText, ShieldCheck, UserCog, Users, Waypoints, X,
 } from "lucide-react";
 import { autenticadoApi, buscarUsuarioAtual, logoutApi, usuarioApi, type UsuarioApi } from "@/lib/api/http";
 import { useNotificacoes } from "@/hooks/useNotificacoes";
@@ -179,6 +179,9 @@ export default function LayoutErp() {
             Clientes
           </p>
           {itemMenu(<Users className="w-4 h-4" />, "Base", "/erp/clientes")}
+          {/* Contratos do cliente com o BANCO (correção 4, Fase 3) — os contratos com o
+              ESCRITÓRIO seguem no grupo Comercial ("Contratos Cliente") */}
+          {itemMenu(<Landmark className="w-4 h-4" />, "Contratos", "/erp/contratos-banco")}
           {/* Grupo Comercial (correção 3 do plano de correções 22/10): os contratos
               do escritório com o cliente moram aqui — "Contratos Cliente" */}
           <p

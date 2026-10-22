@@ -44,12 +44,19 @@ export function EncaminharContratoTarefa({
   onFechar,
   numero,
   clienteNome,
+  contratoId,
 }: {
   aberto: boolean;
   onFechar: () => void;
   /** Número do contrato recém-criado (vai no título/descrição da tarefa). */
   numero: string;
   clienteNome: string;
+  /**
+   * Contrato recém-criado: vai em `criarTarefa` para a tarefa NASCER VINCULADA (nasce órfã
+   * do contrato hoje) — é esse vínculo que faz a timeline listar os anexos do contrato na
+   * linha "criada" (correção 2, Fase 1 de `docs/plano-correcoes-comercial-contratos-tarefas.md`).
+   */
+  contratoId?: string | null;
 }) {
   const [setores, setSetores] = useState<Setor[]>([]);
   const [setorId, setSetorId] = useState("");
@@ -79,6 +86,9 @@ export function EncaminharContratoTarefa({
         descricao: `Contrato nº ${numero} — primeira tarefa do fluxo, criada junto com o cadastro do contrato em ${new Date().toLocaleDateString("pt-BR")}.`,
         dataVencimento: HOJE,
         nomeCliente: clienteNome,
+        // Vínculo com o contrato (correção 2): sem ele a tarefa nasce órfã e a timeline
+        // não tem como mostrar os arquivos do contrato no primeiro item do histórico.
+        contratoId: contratoId ?? undefined,
         setorId: encaminhada && setorId ? setorId : undefined,
         responsavelId: undefined,
       });

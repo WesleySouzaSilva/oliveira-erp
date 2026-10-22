@@ -569,7 +569,14 @@ export default function TarefasApi() {
               mudou, recados e anexos.
             </DialogDescription>
           </DialogHeader>
-          {tarefaHistorico && <TarefaTimeline tarefaId={tarefaHistorico.id} />}
+          {tarefaHistorico && (
+            <TarefaTimeline
+              tarefaId={tarefaHistorico.id}
+              // A tarefa completa já vem da lista: o contratoId liga a linha "criada" aos
+              // anexos do contrato (correção 2) — sem ele o primeiro item fica sem arquivo.
+              contratoId={tarefaHistorico.contratoId}
+            />
+          )}
         </DialogContent>
       </Dialog>
 

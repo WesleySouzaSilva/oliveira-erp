@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api/http";
+import { apiFetch, baixarArquivo } from "@/lib/api/http";
 import type { Pagina } from "@/lib/api/pagina";
 
 /**
@@ -114,6 +114,15 @@ export function listarArquivos(contratoId: string): Promise<Arquivo[]> {
 
 export function excluirArquivo(id: string): Promise<void> {
   return apiFetch<void>(`/arquivos/${id}`, { method: "DELETE" });
+}
+
+/**
+ * Baixa o conteudo gravado do anexo do contrato (`GET /arquivos/{id}/conteudo`) — o banco
+ * guarda so o caminho, os bytes ficam no servidor. O `<a href>` puro nao manda o Bearer,
+ * entao o download passa pelo `baixarArquivo` (http.ts), igual ao anexo da tarefa.
+ */
+export function baixarArquivoContrato(id: string, nome: string): Promise<void> {
+  return baixarArquivo(`/arquivos/${id}/conteudo`, nome);
 }
 
 // ------------------------------------------------- lista geral (Contratos Clientes)

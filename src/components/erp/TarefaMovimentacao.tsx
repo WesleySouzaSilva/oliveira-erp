@@ -12,6 +12,8 @@ import {
 } from "@/lib/api/tarefas";
 import { listarSetores, type Setor } from "@/lib/api/setores";
 import { listarMembros, type Membro } from "@/lib/api/membros";
+import { baixarArquivoContrato, listarArquivos, type Arquivo } from "@/lib/api/contratos";
+import { formatarTamanho } from "@/lib/formatarTamanho";
 
 /**
  * Movimentação da tarefa, dentro do drawer de detalhe:
@@ -36,20 +38,44 @@ const ROTULOS: Record<string, string> = {
 const dataHora = (iso?: string | null): string =>
   iso ? new Date(iso).toLocaleString("pt-BR") : "—";
 
-/** "1536" -> "1,5 KB" (tamanho do anexo no listado da trilha). */
-const formatarTamanho = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1).replace(".", ",")} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} MB`;
-};
-
 /* -------------------------------------------------------------- timeline */
 
-export function TarefaTimeline({ tarefaId }: { tarefaId: string }) {
+/**
+ * Anexos do contrato (`arquivos_cliente`) já buscados, por contratoId — guardados em
+ * módulo para a timeline não rebuscar a cada render/reabertura da janela (correção 2).
+ * Falha não fica no cache: a próxima abertura tenta de novo.
+ */
+const cacheAnexosContrato = new Map<string, Promise<Arquivo[]>>();
+
+function anexosDoContrato(contratoId: string): Promise<Arquivo[]> {
+  const guardado = cacheAnexosContrato.get(contratoId);
+  if (guardado) return guardado;
+  const promessa = listarArquivos(contratoId).catch((erro) => {
+    cacheAnexosContrato.delete(contratoId);
+    throw erro;
+  });
+  cacheAnexosContrato.set(contratoId, promessa);
+  return promessa;
+}
+
+export function TarefaTimeline({
+  tarefaId,
+  contratoId,
+}: {
+  tarefaId: string;
+  /**
+   * Contrato da tarefa (opcional): na linha `criada` a trilha lista os anexos DO CONTRATO
+   * (`arquivos_cliente`) — nada os copia para `tarefas_anexos`, então sem este vínculo o
+   * primeiro item do histórico ficava sem arquivo (correção 2, Fase 1 do plano).
+   */
+  contratoId?: string | null;
+}) {
   const [linhas, setLinhas] = useState<TarefaHistorico[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [semPermissao, setSemPermissao] = useState(false);
   const [mostrarEdicoes, setMostrarEdicoes] = useState<Set<string>>(new Set());
+  /** Anexos do contrato (busca única por contratoId, cache acima). */
+  const [anexosContrato, setAnexosContrato] = useState<Arquivo[]>([]);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -71,6 +97,29 @@ export function TarefaTimeline({ tarefaId }: { tarefaId: string }) {
   useEffect(() => {
     void carregar();
   }, [carregar]);
+
+  // Anexos do contrato: 1 busca por contratoId (o cache de módulo evita rebuscar ao
+  // reabrir a janela); tarefa sem vínculo não tem o que buscar.
+  useEffect(() => {
+    if (!contratoId) {
+      setAnexosContrato([]);
+      return;
+    }
+    let ativo = true;
+    anexosDoContrato(contratoId)
+      .then((lista) => {
+        if (ativo) setAnexosContrato(lista);
+      })
+      .catch((erro) => {
+        if (ativo) {
+          setAnexosContrato([]);
+          toast.error(mensagemDeErro(erro));
+        }
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [contratoId]);
 
   const alternarEdicoes = (id: string) =>
     setMostrarEdicoes((atual) => {
@@ -105,6 +154,25 @@ export function TarefaTimeline({ tarefaId }: { tarefaId: string }) {
       {linhas.map((linha) => {
         const temDiff = Boolean(linha.campos && linha.campos.length > 0);
         const edicoesAbertas = mostrarEdicoes.has(linha.id);
+        // Anexos da ação: nas encaminhadas vêm da própria linha (`tarefas_anexos`, V12);
+        // na "criada" de tarefa vêm DO CONTRATO (arquivos_cliente) — nada copia os arquivos
+        // do contrato para a linha, então o vínculo traz os arquivos do primeiro item.
+        const anexosDaLinha = [
+          ...(linha.acao === "criada" && contratoId
+            ? anexosContrato.map((arquivo) => ({
+                id: arquivo.id,
+                nomeOriginal: arquivo.nomeOriginal,
+                tamanhoBytes: arquivo.tamanhoBytes,
+                baixar: () => baixarArquivoContrato(arquivo.id, arquivo.nomeOriginal),
+              }))
+            : []),
+          ...(linha.anexos ?? []).map((anexo) => ({
+            id: anexo.id,
+            nomeOriginal: anexo.nomeOriginal,
+            tamanhoBytes: anexo.tamanhoBytes,
+            baixar: () => baixarAnexoTarefa(anexo.id, anexo.nomeOriginal),
+          })),
+        ];
         return (
           <li key={linha.id} className="relative pl-5 border-l border-border">
             <span className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-accent" />
@@ -134,17 +202,16 @@ export function TarefaTimeline({ tarefaId }: { tarefaId: string }) {
               </p>
             )}
 
-            {/* Anexos da ação: bytes na pasta do servidor, aqui só o nome (V12) */}
-            {(linha.anexos?.length ?? 0) > 0 && (
+            {/* Anexos da ação: bytes na pasta do servidor, aqui só o nome (V12) — a
+                linha "criada" de tarefa de contrato traz os anexos do próprio contrato */}
+            {anexosDaLinha.length > 0 && (
               <ul className="mt-1 space-y-1">
-                {(linha.anexos ?? []).map((anexo) => (
+                {anexosDaLinha.map((anexo) => (
                   <li key={anexo.id}>
                     <button
                       type="button"
                       onClick={() =>
-                        baixarAnexoTarefa(anexo.id, anexo.nomeOriginal).catch((erro) =>
-                          toast.error(mensagemDeErro(erro)),
-                        )
+                        anexo.baixar().catch((erro) => toast.error(mensagemDeErro(erro)))
                       }
                       className="text-[11px] text-accent hover:underline inline-flex items-center gap-1"
                     >

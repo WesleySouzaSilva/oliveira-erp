@@ -6,6 +6,7 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   FileSignature,
+  Loader2,
   Paperclip,
   Pencil,
   Plus,
@@ -40,11 +41,16 @@ import { listarTiposObjeto, type TipoObjeto } from "@/lib/api/objetos";
 import {
   anexarArquivos,
   atualizarContrato,
+  baixarArquivoContrato,
   criarContrato,
+  excluirArquivo,
   excluirContrato,
+  listarArquivos,
   listarContratos,
+  type Arquivo,
   type Contrato,
 } from "@/lib/api/contratos";
+import { formatarTamanho } from "@/lib/formatarTamanho";
 import { DetalheContrato } from "@/components/erp/DetalheContrato";
 import { EncaminharContratoTarefa } from "@/components/erp/EncaminharContratoTarefa";
 import { temDetalhes } from "@/lib/contratoDetalhes";
@@ -83,13 +89,6 @@ interface Formulario {
 
 const FORM_VAZIO: Formulario = { objetoId: "", valor: "", descricao: "" };
 
-/** "1536" -> "1,5 KB" (mesma régua do anexo da tarefa). */
-const formatarTamanho = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1).replace(".", ",")} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} MB`;
-};
-
 export function ContratosClienteDialog({
   aberto,
   onAbertoChange,
@@ -108,8 +107,10 @@ export function ContratosClienteDialog({
    * Primeira tarefa do contrato (16/10/2026): depois de criar o contrato, a janela
    * "Primeira tarefa do contrato" pede o setor de encaminhamento. Só abre quando o
    * form NÃO marcou setores de envio (nesse caso a API já criou as tarefas por setor).
+   * Guarda id + número: o id viaja como `contratoId` da tarefa (correção 2) — é o
+   * vínculo que faz a timeline mostrar os anexos na linha "criada".
    */
-  const [numeroContratoNovo, setNumeroContratoNovo] = useState<string | null>(null);
+  const [contratoNovo, setContratoNovo] = useState<{ id: string; numero: string } | null>(null);
   const [carregando, setCarregando] = useState(true);
   /** Ids das linhas com o detalhe aberto — a descrição só existe depois da seta. */
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
@@ -121,9 +122,16 @@ export function ContratosClienteDialog({
   /**
    * Documentos anexados junto da descrição (19/10/2026) — mesmo jeito do encaminhar
    * da tarefa: os arquivos ficam na fila e vão para o servidor depois que o contrato
-   * existe (`POST /contratos/{id}/arquivos`).
+   * existe (`POST /contratos/{id}/arquivos`). A fila é só dos NOVOS.
    */
   const [arquivos, setArquivos] = useState<File[]>([]);
+  /**
+   * Anexos JÁ GRAVADOS do contrato em edição (`GET /contratos/{id}/arquivos`) — a edição
+   * deixou de zerar a lista (correção 1): dá para baixar e excluir os que já estão lá,
+   * enquanto os novos seguem na fila `arquivos` e vão no salvar.
+   */
+  const [arquivosExistentes, setArquivosExistentes] = useState<Arquivo[]>([]);
+  const [carregandoAnexos, setCarregandoAnexos] = useState(false);
 
   // A data de abertura é automática: o form não tem o campo, só informa ao usuário.
   const hoje = new Date().toLocaleDateString("pt-BR");
@@ -155,6 +163,36 @@ export function ContratosClienteDialog({
       setFormAberto(true);
     }
   }, [aberto, clienteId, iniciandoComFormulario]);
+
+  // Em edição, os anexos já gravados entram na lista em vez de zerar tudo (correção 1):
+  // dá para baixar e excluir; os novos continuam na fila `arquivos` e vão no salvar.
+  // Form de contrato NOVO não busca nada (ainda não existe id); `ativo` descarta a
+  // resposta se a pessoa trocar de contrato (ou fechar o form) antes de terminar.
+  useEffect(() => {
+    if (!formAberto || !editando) {
+      setArquivosExistentes([]);
+      return;
+    }
+    let ativo = true;
+    setCarregandoAnexos(true);
+    setArquivosExistentes([]);
+    listarArquivos(editando.id)
+      .then((lista) => {
+        if (ativo) setArquivosExistentes(lista);
+      })
+      .catch((erro) => {
+        if (ativo) {
+          setArquivosExistentes([]);
+          toast.error(mensagemDeErro(erro));
+        }
+      })
+      .finally(() => {
+        if (ativo) setCarregandoAnexos(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [formAberto, editando]);
 
   const abrirNovo = () => {
     setEditando(null);
@@ -228,7 +266,7 @@ export function ContratosClienteDialog({
         // Primeira tarefa do contrato: janela pedindo o setor de encaminhamento
         // (se o form já marcou setores de envio, a API criou as tarefas por setor).
         if (setoresEnvio.length === 0) {
-          setNumeroContratoNovo(criado.numero);
+          setContratoNovo({ id: criado.id, numero: criado.numero });
         }
         onContratoCriado?.();
       }
@@ -281,6 +319,24 @@ export function ContratosClienteDialog({
 
   const nomeDoTipo = (id: string | null | undefined) =>
     tipos.find((tipo) => tipo.id === id)?.tipoObjeto ?? "—";
+
+  /** Exclui um anexo JÁ GRAVADO do contrato em edição (exclusão imediata na API). */
+  const excluirAnexoExistente = async (arquivo: Arquivo) => {
+    const confirmado = await confirmar({
+      title: `Excluir o anexo ${arquivo.nomeOriginal}?`,
+      description: "O arquivo sai do contrato e não pode ser recuperado.",
+      confirmText: "Excluir",
+      destructive: true,
+    });
+    if (!confirmado) return;
+    try {
+      await excluirArquivo(arquivo.id);
+      setArquivosExistentes((atual) => atual.filter((item) => item.id !== arquivo.id));
+      toast.success("Anexo excluído.");
+    } catch (erro) {
+      toast.error(mensagemDeErro(erro));
+    }
+  };
 
   return (
     <Dialog open={aberto} onOpenChange={onAbertoChange}>
@@ -430,6 +486,57 @@ export function ContratosClienteDialog({
                     </ul>
                   )}
                 </div>
+                {/* Anexos JÁ GRAVADOS (só na edição — correção 1): baixam e excluem os que
+                    já estão no contrato; a fila de cima continua sendo só dos novos. */}
+                {editando && (
+                  <div className="space-y-1 pt-1.5">
+                    <p className="block text-[11px] text-muted-foreground">
+                      Anexos já vinculados ao contrato
+                    </p>
+                    {carregandoAnexos ? (
+                      <p className="text-[11px] text-muted-foreground flex items-center gap-2">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Carregando anexos...
+                      </p>
+                    ) : arquivosExistentes.length === 0 ? (
+                      <p className="text-[11px] text-muted-foreground">Nenhum anexo gravado.</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {arquivosExistentes.map((arquivo) => (
+                          <li
+                            key={arquivo.id}
+                            className="flex items-center justify-between gap-2 rounded-md bg-secondary/60 px-2 py-1 text-xs"
+                          >
+                            <button
+                              type="button"
+                              onClick={() =>
+                                baixarArquivoContrato(arquivo.id, arquivo.nomeOriginal).catch(
+                                  (erro) => toast.error(mensagemDeErro(erro)),
+                                )
+                              }
+                              className="truncate inline-flex items-center gap-1.5 text-accent hover:underline"
+                            >
+                              <Paperclip className="w-3 h-3 shrink-0" />
+                              {arquivo.nomeOriginal}
+                              {arquivo.tamanhoBytes ? (
+                                <span className="text-muted-foreground">
+                                  ({formatarTamanho(arquivo.tamanhoBytes)})
+                                </span>
+                              ) : null}
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Excluir ${arquivo.nomeOriginal}`}
+                              onClick={() => void excluirAnexoExistente(arquivo)}
+                              className="text-muted-foreground hover:text-destructive"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             {!editando && (
@@ -607,9 +714,10 @@ export function ContratosClienteDialog({
 
       {/* Primeira tarefa do contrato: janela pedindo o setor de encaminhamento (16/10/2026) */}
       <EncaminharContratoTarefa
-        aberto={numeroContratoNovo !== null}
-        onFechar={() => setNumeroContratoNovo(null)}
-        numero={numeroContratoNovo ?? ""}
+        aberto={contratoNovo !== null}
+        onFechar={() => setContratoNovo(null)}
+        numero={contratoNovo?.numero ?? ""}
+        contratoId={contratoNovo?.id ?? null}
         clienteNome={clienteNome}
       />
     </Dialog>

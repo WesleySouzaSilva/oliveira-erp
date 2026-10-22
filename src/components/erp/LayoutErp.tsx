@@ -172,16 +172,23 @@ export default function LayoutErp() {
               </span>
             ) : undefined,
           )}
-          {/* Grupo Clientes (decisão 1 do plano de contratos): Base + Contratos Clientes */}
+          {/* Grupo Clientes: Base (correção 3 moveu os contratos para o grupo Comercial) */}
           <p
             className={`px-3 pt-4 pb-1 text-[11px] font-semibold uppercase text-muted-foreground tracking-wide ${recolhido ? "lg:hidden" : ""}`}
           >
             Clientes
           </p>
           {itemMenu(<Users className="w-4 h-4" />, "Base", "/erp/clientes")}
+          {/* Grupo Comercial (correção 3 do plano de correções 22/10): os contratos
+              do escritório com o cliente moram aqui — "Contratos Cliente" */}
+          <p
+            className={`px-3 pt-4 pb-1 text-[11px] font-semibold uppercase text-muted-foreground tracking-wide ${recolhido ? "lg:hidden" : ""}`}
+          >
+            Comercial
+          </p>
           {itemMenu(
             <FileSignature className="w-4 h-4" />,
-            "Contratos Clientes",
+            "Contratos Cliente",
             "/erp/contratos",
           )}
           {/* Ferramentas: códigos dos tribunais — leitura para TODOS (a gestão

@@ -98,6 +98,10 @@ export interface FiltroClientes {
   buscaEm?: BuscaClientes;
   nome?: string;
   cpfCnpj?: string;
+  /** Filtro por coluna "Município" (Correção 6) — a API já aceita o parâmetro. */
+  municipio?: string;
+  /** Filtro por coluna "Telefone" (Correção 6) — a API já aceita o parâmetro. */
+  telefone?: string;
   situacao?: string;
   page?: number;
   size?: number;
@@ -110,6 +114,8 @@ export function listarClientes(filtro: FiltroClientes = {}): Promise<Pagina<Clie
       buscaEm: filtro.buscaEm,
       nome: filtro.nome,
       cpfCnpj: filtro.cpfCnpj,
+      municipio: filtro.municipio,
+      telefone: filtro.telefone,
       situacao: filtro.situacao,
       page: filtro.page ?? 0,
       size: filtro.size ?? 20,

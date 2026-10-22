@@ -1,7 +1,7 @@
 import { NavLink, Navigate, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  Briefcase, Building2, FileSignature, FolderTree, KeyRound, Landmark, Layers, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ScrollText, ShieldCheck, UserCog, Users, Waypoints, X,
+  Briefcase, Building2, FileSignature, FolderTree, KeyRound, Landmark, Layers, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ScrollText, ShieldCheck, Tags, UserCog, Users, Waypoints, X,
 } from "lucide-react";
 import { autenticadoApi, buscarUsuarioAtual, logoutApi, usuarioApi, type UsuarioApi } from "@/lib/api/http";
 import { useNotificacoes } from "@/hooks/useNotificacoes";
@@ -230,6 +230,9 @@ export default function LayoutErp() {
               {itemMenu(<Layers className="w-4 h-4" />, "Sub-Categoria / Objeto", "/erp/sub-objetos")}
               {itemMenu(<Waypoints className="w-4 h-4" />, "Setores", "/erp/setores")}
               {itemMenu(<Briefcase className="w-4 h-4" />, "Funções", "/erp/funcoes")}
+              {/* Tipos de tarefa: é o destino do aviso "cadastre em Cadastro > Tipos de
+                  tarefa" do form de nova tarefa (Tarefas.tsx) — rótulo exato. */}
+              {itemMenu(<Tags className="w-4 h-4" />, "Tipos de tarefa", "/erp/tipos-tarefa")}
             </>
           )}
         </nav>

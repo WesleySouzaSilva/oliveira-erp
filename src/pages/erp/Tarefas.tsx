@@ -134,12 +134,17 @@ function statusDaTarefa(t: Tarefa): ColunaKanban {
 
 /**
  * Campos em que a busca de texto procura — o select ao lado do campo (decisão do titular,
- * 20/10/2026, mesmo estilo da lista de contratos): título, descrição ou cliente.
+ * 20/10/2026, mesmo estilo da lista de contratos).
+ *
+ * Correção 6 (22/10/2026): entra **Processo** (`buscaEm=processo`, já aceito pela lib e
+ * pela API) e "Título" vira **"Tipo de tarefa"** — o `titulo` passou a guardar o nome do
+ * tipo (correção 5b), então é o mesmo campo com rótulo novo.
  */
 const CAMPOS_BUSCA: { valor: BuscaTarefas; rotulo: string; placeholder: string }[] = [
-  { valor: "titulo", rotulo: "Título", placeholder: "Buscar por título..." },
+  { valor: "titulo", rotulo: "Tipo de tarefa", placeholder: "Buscar por tipo de tarefa..." },
   { valor: "descricao", rotulo: "Descrição", placeholder: "Buscar na descrição..." },
   { valor: "cliente", rotulo: "Cliente", placeholder: "Buscar por cliente..." },
+  { valor: "processo", rotulo: "Processo", placeholder: "Buscar por processo..." },
 ];
 
 export default function TarefasApi() {
@@ -263,7 +268,11 @@ export default function TarefasApi() {
     carregar("");
   }, [carregar]);
 
-  // Busca com debounce (mesmo padrão da tela de Clientes).
+  // Busca com debounce (mesmo padrão da tela de Clientes) — e o CAMPO escolhido no
+  // select viaja junto: `carregar` é memoizado sem `buscaEm` nas deps, então o valor
+  // tem que ser passado na CHAMADA (senão o debounce voltava a buscar no campo da
+  // primeira carga e a opção "Processo" não pegava). Trocar o select dispara pela
+  // mesma régua — uma chamada só, sem o gatilho imediato de antes.
   const primeiraBusca = useRef(true);
   const timerBusca = useRef<number | null>(null);
   useEffect(() => {
@@ -273,11 +282,11 @@ export default function TarefasApi() {
     }
     if (timerBusca.current) window.clearTimeout(timerBusca.current);
     setPagina(0);
-    timerBusca.current = window.setTimeout(() => carregar(busca), 300);
+    timerBusca.current = window.setTimeout(() => carregar(busca, buscaEm), 300);
     return () => {
       if (timerBusca.current) window.clearTimeout(timerBusca.current);
     };
-  }, [busca, carregar]);
+  }, [busca, buscaEm, carregar]);
 
   /**
    * Conclusão só pelo Status (decisão do titular 16/10/2026): virar concluída é pedido de
@@ -346,9 +355,9 @@ export default function TarefasApi() {
       toast.success(`Reagendada para ${dataBr(novaData)}`);
     } catch (erro) {
       toast.error(mensagemDeErro(erro));
-      carregar(busca);
+      carregar(busca, buscaEm);
     }
-  }, [busca, carregar]);
+  }, [busca, buscaEm, carregar]);
 
   const soltar = useCallback(
     (coluna: ColunaKanban) => {
@@ -522,16 +531,16 @@ export default function TarefasApi() {
         }
       />
 
-      {/* Busca com TIPO (mesmo estilo das outras telas): titulo, descricao ou cliente. */}
+      {/* Busca com TIPO (mesmo estilo das outras telas): tipo de tarefa, descrição,
+          cliente ou processo — Correção 6. */}
       <div className="flex items-center gap-2 max-w-xl">
         <select
           aria-label="Tipo de busca"
           value={buscaEm}
           onChange={(evento) => {
-            const novoCampo = evento.target.value as BuscaTarefas;
-            setBuscaEm(novoCampo);
-            if (timerBusca.current) window.clearTimeout(timerBusca.current);
-            carregar(busca, novoCampo);
+            // Só troca o campo: o efeito do debounce dispara a nova busca (300 ms),
+            // sem gerar dois pedidos para o mesmo estado.
+            setBuscaEm(evento.target.value as BuscaTarefas);
           }}
           className="h-10 w-36 shrink-0 rounded-md border border-input bg-background px-3 text-sm"
         >

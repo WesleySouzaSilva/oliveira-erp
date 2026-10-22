@@ -286,6 +286,70 @@ const CAMPOS_BUSCA: { valor: BuscaClientes; rotulo: string; placeholder: string 
   { valor: "email", rotulo: "E-mail", placeholder: "Buscar por e-mail..." },
 ];
 
+/**
+ * Filtro por coluna (Correção 6, 22/10/2026): a listagem é PAGINADA na API, então os
+ * inputs dos cabeçalhos viram parâmetros do `GET /clientes` — o filtro de coluna e a
+ * BUSCA GLOBAL do topo valem juntos (E), e qualquer um dos dois recomeça na página 0.
+ *
+ * São 5 de 6 colunas: Nome → `nome`, CPF/CNPJ → `cpfCnpj`, Município → `municipio`,
+ * Telefone → `telefone` e Situação → `situacao` (catálogo `SITUACOES` da própria tela);
+ * "Ações" é coluna de botão, sem filtro. Os dois últimos parâmetros entraram na lib
+ * junto com esta correção — a API já os aceitava.
+ */
+type FiltroColunas = {
+  nome: string;
+  cpfCnpj: string;
+  municipio: string;
+  telefone: string;
+  situacao: string;
+};
+
+const COLUNAS_VAZIAS: FiltroColunas = {
+  nome: "",
+  cpfCnpj: "",
+  municipio: "",
+  telefone: "",
+  situacao: "",
+};
+
+/** Input pequeno sob o cabeçalho da coluna, com o (x) de limpar quando preenchido. */
+function FiltroColuna({
+  rotulo,
+  valor,
+  placeholder,
+  largura,
+  aoMudar,
+}: {
+  rotulo: string;
+  valor: string;
+  placeholder: string;
+  largura: string;
+  aoMudar: (valor: string) => void;
+}) {
+  return (
+    <div className="mt-1 flex items-center gap-1">
+      <Input
+        value={valor}
+        onChange={(evento) => aoMudar(evento.target.value)}
+        placeholder={placeholder}
+        aria-label={`Filtrar por ${rotulo}`}
+        className={`h-7 px-2 text-xs ${largura}`}
+      />
+      {valor !== "" && (
+        <button
+          type="button"
+          onClick={() => aoMudar("")}
+          aria-label={`Limpar filtro de ${rotulo}`}
+          title={`Limpar filtro de ${rotulo}`}
+          className="shrink-0 w-5 h-5 inline-grid place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function Clientes() {
   const navigate = useNavigate();
   const confirmar = useConfirm();
@@ -293,6 +357,10 @@ export default function Clientes() {
   const [busca, setBusca] = useState("");
   /** Campo em que a busca de texto procura (select ao lado do campo). */
   const [buscaEm, setBuscaEm] = useState<BuscaClientes>("nome");
+  /** Filtros por coluna (Correção 6) — vão para a API na mesma carga da busca global. */
+  const [colunas, setColunas] = useState<FiltroColunas>(COLUNAS_VAZIAS);
+  const mudarColuna = (campo: keyof FiltroColunas, valor: string) =>
+    setColunas((atual) => ({ ...atual, [campo]: valor }));
   const [carregando, setCarregando] = useState(true);
   const [numeroPagina, setNumeroPagina] = useState(0);
 
@@ -328,16 +396,29 @@ export default function Clientes() {
       setForm((atual) => ({ ...atual, [nome]: evento.target.value })),
   });
 
-  // `campo` usa o padrão da própria chamada: muda o select e chamar `carregar(busca, 0)`
-  // já busca no campo novo, sem depender do estado dentro do useCallback.
+  // `campo` e `filtrosColuna` vêm NA CHAMADA: `carregar` é memoizado (deps [navigate]),
+  // então os defaults congelariam na primeira renderização — quem chama lê o estado
+  // fresco do próprio escopo.
   const carregar = useCallback(
-    async (nome: string, paginaAtual: number, campo: BuscaClientes = buscaEm) => {
+    async (
+      nome: string,
+      paginaAtual: number,
+      campo: BuscaClientes = buscaEm,
+      filtrosColuna: FiltroColunas = COLUNAS_VAZIAS,
+    ) => {
       setCarregando(true);
       try {
         const termo = nome.trim();
         const resultado = await listarClientes({
+          // busca global (topo)
           busca: termo || undefined,
           buscaEm: termo ? campo : undefined,
+          // filtros por coluna (E com a busca; vazio = não manda o parâmetro)
+          nome: filtrosColuna.nome.trim() || undefined,
+          cpfCnpj: filtrosColuna.cpfCnpj.trim() || undefined,
+          municipio: filtrosColuna.municipio.trim() || undefined,
+          telefone: filtrosColuna.telefone.trim() || undefined,
+          situacao: filtrosColuna.situacao || undefined,
           page: paginaAtual,
           size: 20,
         });
@@ -411,17 +492,24 @@ export default function Clientes() {
     );
   };
 
+  // Busca global + filtros de coluna com debounce de 300 ms — os dois valem juntos (E)
+  // e a carga sempre recomeça na página 0. O campo do select passa pela mesma régua
+  // (uma chamada só por estado); tudo viaja como ARGUMENTO, porque `carregar` é
+  // memoizado sem `buscaEm`/`colunas` nas deps.
   useEffect(() => {
     if (primeiraBusca.current) {
       primeiraBusca.current = false;
       return;
     }
     if (timerBusca.current) window.clearTimeout(timerBusca.current);
-    timerBusca.current = window.setTimeout(() => carregar(busca, 0), 300);
+    timerBusca.current = window.setTimeout(
+      () => carregar(busca, 0, buscaEm, colunas),
+      300,
+    );
     return () => {
       if (timerBusca.current) window.clearTimeout(timerBusca.current);
     };
-  }, [busca, carregar]);
+  }, [busca, buscaEm, colunas, carregar]);
 
   /**
    * Duplicidade em tempo real (pedido do titular 16/10/2026): enquanto o admin preenche
@@ -466,7 +554,12 @@ export default function Clientes() {
       toast.success("Cliente excluído");
       // última linha da página? volta uma para não cair numa página vazia
       const ultimaDaPagina = (pagina?.content.length ?? 0) === 1 && numeroPagina > 0;
-      await carregar(busca, ultimaDaPagina ? numeroPagina - 1 : numeroPagina);
+      await carregar(
+        busca,
+        ultimaDaPagina ? numeroPagina - 1 : numeroPagina,
+        buscaEm,
+        colunas,
+      );
     } catch (erro) {
       if (erro instanceof ErroApi && erro.status === 401) {
         navigate("/erp/entrar", { replace: true });
@@ -479,7 +572,7 @@ export default function Clientes() {
   const buscar = (evento: React.FormEvent) => {
     evento.preventDefault();
     if (timerBusca.current) window.clearTimeout(timerBusca.current);
-    carregar(busca, 0);
+    carregar(busca, 0, buscaEm, colunas);
   };
 
   const abrirNovo = () => {
@@ -547,7 +640,7 @@ export default function Clientes() {
         toast.success("Cliente cadastrado");
       }
       setDialogAberto(false);
-      await carregar(busca, numeroPagina);
+      await carregar(busca, numeroPagina, buscaEm, colunas);
       if (gerarContrato && clienteSalvo) {
         setContratosDe(clienteSalvo);
         setFormContratoAberto(true);
@@ -567,6 +660,8 @@ export default function Clientes() {
   const total = pagina?.page.totalElements ?? 0;
   const primeiro = pagina?.page.first ?? true;
   const ultimo = pagina?.page.last ?? true;
+  /** Algum filtro de coluna preenchido (para o estado vazio não culpar a busca). */
+  const temFiltroColuna = Object.values(colunas).some((valor) => valor !== "");
 
   return (
     <div className="p-4 sm:p-6 lg:p-10 space-y-6">
@@ -592,10 +687,9 @@ export default function Clientes() {
           aria-label="Tipo de busca"
           value={buscaEm}
           onChange={(evento) => {
-            const novoCampo = evento.target.value as BuscaClientes;
-            setBuscaEm(novoCampo);
-            if (timerBusca.current) window.clearTimeout(timerBusca.current);
-            carregar(busca, 0, novoCampo);
+            // Só troca o campo: o efeito do debounce dispara a nova busca (300 ms),
+            // sem gerar dois pedidos para o mesmo estado.
+            setBuscaEm(evento.target.value as BuscaClientes);
           }}
           className="h-10 w-40 shrink-0 rounded-md border border-input bg-background px-3 text-sm"
         >
@@ -622,10 +716,12 @@ export default function Clientes() {
       ) : clientes.length === 0 ? (
         <EmptyState
           icon={Users}
-          title={busca ? "Nenhum cliente encontrado" : "Nenhum cliente cadastrado"}
+          title={
+            busca || temFiltroColuna ? "Nenhum cliente encontrado" : "Nenhum cliente cadastrado"
+          }
           description={
-            busca
-              ? "Tente outro termo ou troque o tipo de busca."
+            busca || temFiltroColuna
+              ? "Tente outro termo, troque o tipo de busca ou limpe os filtros das colunas."
               : "Cadastre o primeiro cliente para começar a usar o módulo."
           }
           action={{ label: "Novo cliente", onClick: abrirNovo }}
@@ -635,13 +731,85 @@ export default function Clientes() {
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
+                {/* Filtro por coluna (Correção 6): cada campo vira parâmetro do
+                    `GET /clientes` e vale JUNTO com a busca global do topo (E) — os
+                    dois recomeçam sempre na página 0. */}
                 <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>CPF/CNPJ</TableHead>
-                  <TableHead>Município</TableHead>
-                  <TableHead>Telefone</TableHead>
-                  <TableHead>Situação</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
+                  <TableHead className="align-bottom">
+                    Nome
+                    <FiltroColuna
+                      rotulo="Nome"
+                      valor={colunas.nome}
+                      placeholder="Nome..."
+                      largura="w-32"
+                      aoMudar={(valor) => mudarColuna("nome", valor)}
+                    />
+                  </TableHead>
+                  <TableHead className="align-bottom">
+                    CPF/CNPJ
+                    <FiltroColuna
+                      rotulo="CPF/CNPJ"
+                      valor={colunas.cpfCnpj}
+                      placeholder="CPF ou CNPJ"
+                      largura="w-32"
+                      aoMudar={(valor) => mudarColuna("cpfCnpj", valor)}
+                    />
+                  </TableHead>
+                  <TableHead className="align-bottom">
+                    Município
+                    <FiltroColuna
+                      rotulo="Município"
+                      valor={colunas.municipio}
+                      placeholder="Município..."
+                      largura="w-32"
+                      aoMudar={(valor) => mudarColuna("municipio", valor)}
+                    />
+                  </TableHead>
+                  <TableHead className="align-bottom">
+                    Telefone
+                    <FiltroColuna
+                      rotulo="Telefone"
+                      valor={colunas.telefone}
+                      placeholder="Telefone..."
+                      largura="w-28"
+                      aoMudar={(valor) => mudarColuna("telefone", valor)}
+                    />
+                  </TableHead>
+                  <TableHead className="align-bottom">
+                    Situação
+                    <div className="mt-1 flex items-center gap-1">
+                      <select
+                        aria-label="Filtrar por Situação"
+                        value={colunas.situacao}
+                        onChange={(evento) => mudarColuna("situacao", evento.target.value)}
+                        className="h-7 w-32 rounded-md border border-input bg-background px-1.5 text-xs"
+                      >
+                        <option value="">Todas</option>
+                        {/* mesmos valores do catálogo que a coluna usa */}
+                        {Object.entries(SITUACOES).map(([valor, situacao]) => (
+                          <option key={valor} value={valor}>
+                            {situacao.rotulo}
+                          </option>
+                        ))}
+                      </select>
+                      {colunas.situacao !== "" && (
+                        <button
+                          type="button"
+                          onClick={() => mudarColuna("situacao", "")}
+                          aria-label="Limpar filtro de Situação"
+                          title="Limpar filtro de Situação"
+                          className="shrink-0 w-5 h-5 inline-grid place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </TableHead>
+                  <TableHead className="text-right align-bottom">
+                    Ações
+                    {/* respiro para a linha de filtros alinhar os rótulos */}
+                    <div className="mt-1 h-7" aria-hidden="true" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

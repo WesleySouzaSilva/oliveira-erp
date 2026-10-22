@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import Tarefas from "@/pages/erp/Tarefas";
 import {
   anexarArquivosTarefa, baixarAnexoTarefa, criarTarefa, listarArquivosTarefa,
-  listarTiposTarefa,
+  listarTarefas, listarTiposTarefa,
 } from "@/lib/api/tarefas";
 
 /**
@@ -350,5 +350,90 @@ describe("Tarefas — detalhe com os campos novos", () => {
     await waitFor(() =>
       expect(vi.mocked(baixarAnexoTarefa)).toHaveBeenCalledWith("anexo-1", "laudo.pdf"),
     );
+  });
+});
+
+/** Última carga pedida à API (a montagem já fez a primeira). */
+function ultimaBusca() {
+  const chamadas = vi.mocked(listarTarefas).mock.calls;
+  return chamadas[chamadas.length - 1]?.[0];
+}
+
+describe("Tarefas — busca com tipo (Correção 6)", () => {
+  it("select traz 'Tipo de tarefa' (o antigo Título) e a opção Processo, e busca no campo escolhido", async () => {
+    renderPagina();
+    await screen.findByText("Tarefa atrasada");
+
+    const select = screen.getByLabelText("Tipo de busca") as HTMLSelectElement;
+    expect(
+      within(select).getAllByRole("option").map((opcao) => opcao.textContent),
+    ).toEqual(["Tipo de tarefa", "Descrição", "Cliente", "Processo"]);
+
+    fireEvent.change(select, { target: { value: "processo" } });
+    fireEvent.change(screen.getByLabelText("Buscar por processo..."), {
+      target: { value: "8f3a1c2e" },
+    });
+
+    await waitFor(
+      () =>
+        expect(ultimaBusca()).toEqual(
+          expect.objectContaining({ busca: "8f3a1c2e", buscaEm: "processo", page: 0 }),
+        ),
+      { timeout: 3000 },
+    );
+  });
+});
+
+describe("Tarefas — filtro por coluna da lista (Correção 6)", () => {
+  it("recorta a tabela em memória, com (x) de limpar, sem chamar a API de novo", async () => {
+    renderPagina();
+    await screen.findByText("Tarefa atrasada");
+    const chamadasNaMontagem = vi.mocked(listarTarefas).mock.calls.length;
+
+    fireEvent.change(screen.getByLabelText("Filtrar por Cliente"), {
+      target: { value: "Cliente Atraso" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Tarefa atrasada")).toBeInTheDocument();
+      expect(screen.queryByText("Tarefa pendente")).toBeNull();
+      expect(screen.queryByText("Tarefa concluida")).toBeNull();
+    });
+    // local: nenhuma chamada nova + a paginação passa a contar o recorte
+    expect(vi.mocked(listarTarefas).mock.calls.length).toBe(chamadasNaMontagem);
+    expect(screen.getByText("1–1 de 1")).toBeInTheDocument();
+
+    // (x) da coluna devolve as três linhas
+    fireEvent.click(screen.getByRole("button", { name: "Limpar filtro de Cliente" }));
+    await waitFor(() => {
+      expect(screen.getByText("Tarefa pendente")).toBeInTheDocument();
+      expect(screen.getByText("Tarefa concluida")).toBeInTheDocument();
+    });
+    expect(screen.getByText("1–3 de 3")).toBeInTheDocument();
+  });
+
+  it("filtros de coluna valem juntos (E) — digitar os dois mantém só a interseção", async () => {
+    renderPagina();
+    await screen.findByText("Tarefa atrasada");
+
+    fireEvent.change(screen.getByLabelText("Filtrar por Cliente"), {
+      target: { value: "atraso" },
+    });
+    fireEvent.change(screen.getByLabelText("Filtrar por Tarefa"), {
+      target: { value: "pendente" },
+    });
+
+    // nenhuma linha bate com os dois ao mesmo tempo
+    await waitFor(() => {
+      expect(screen.queryByText("Tarefa atrasada")).toBeNull();
+      expect(screen.queryByText("Tarefa pendente")).toBeNull();
+    });
+    expect(screen.getByText("Nada com os filtros de coluna.")).toBeInTheDocument();
+    // case-insensitive: "atraso" bate com "Cliente Atraso" quando é o único filtro
+    fireEvent.change(screen.getByLabelText("Filtrar por Tarefa"), {
+      target: { value: "" },
+    });
+    await waitFor(() => expect(screen.getByText("Tarefa atrasada")).toBeInTheDocument());
+    expect(screen.queryByText("Tarefa pendente")).toBeNull();
   });
 });

@@ -1,6 +1,8 @@
-import { ChevronLeft, ChevronRight, History, Lock } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, History, Lock, X } from "lucide-react";
 import type { Tarefa } from "@/lib/api/tarefas";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { corDePrioridade } from "@/lib/prioridade";
 
 export interface TabelaTarefasProps {
@@ -32,22 +34,163 @@ function compromissoBr(iso: string): string {
 }
 
 /**
+ * Filtro por coluna (Correção 6, 22/10/2026) — LOCAL: `tarefas` já é um recorte de até
+ * 200 itens carregado na tela, então filtrar em memória é instantâneo e não mexe na API.
+ *
+ * Cada campo casa com o TEXTO DA CÉLULA (mais o valor cru, para colar o ISO), sem
+ * diferenciar maiúsculas de minúsculas, e todos valem juntos (E) — junto com a busca de
+ * texto, o chip do dia do calendário e o card-filtro, que já chegam aplicados em
+ * `tarefas`. Cada coluna tem o seu (x) de limpar.
+ *
+ * A coluna "Tarefa" traz tipo, descrição, setor e contrato na mesma célula, e por ela
+ * também se filtra o processo: não há coluna própria até o módulo de processos existir
+ * (D5 do plano) — colar o UUID acha a linha.
+ */
+const FILTROS = [
+  { campo: "tarefa", rotulo: "Tarefa", placeholder: "Tipo, descrição...", largura: "w-36" },
+  { campo: "cliente", rotulo: "Cliente", placeholder: "Cliente...", largura: "w-32" },
+  { campo: "prioridade", rotulo: "Prioridade", placeholder: "Prioridade...", largura: "w-24" },
+  { campo: "compromisso", rotulo: "Data compromisso", placeholder: "dd/mm/aaaa", largura: "w-32" },
+  { campo: "prazoFatal", rotulo: "Prazo fatal", placeholder: "dd/mm/aaaa", largura: "w-32" },
+  { campo: "responsavel", rotulo: "Responsável", placeholder: "Responsável...", largura: "w-32" },
+] as const;
+
+type CampoFiltro = (typeof FILTROS)[number]["campo"];
+type FiltrosColuna = Record<CampoFiltro, string>;
+
+const FILTROS_VAZIOS: FiltrosColuna = {
+  tarefa: "",
+  cliente: "",
+  prioridade: "",
+  compromisso: "",
+  prazoFatal: "",
+  responsavel: "",
+};
+
+/** Texto da célula da coluna (o que a linha mostra + o valor cru) para o `.includes`. */
+function textoDaColuna(
+  campo: CampoFiltro,
+  tarefa: Tarefa,
+  nomeDeResponsavel: (userId: string) => string,
+): string {
+  switch (campo) {
+    case "tarefa":
+      return [
+        tarefa.titulo,
+        tarefa.descricao,
+        tarefa.tipoNome,
+        tarefa.setorNome,
+        tarefa.contratoNumero,
+        tarefa.processoId,
+      ]
+        .filter(Boolean)
+        .join(" ");
+    case "cliente":
+      return tarefa.nomeCliente ?? "";
+    case "prioridade":
+      return tarefa.prioridade ?? "";
+    case "compromisso":
+      // a célula mostra data + hora; o ISO cru também serve para colar
+      return tarefa.dataCompromisso
+        ? `${compromissoBr(tarefa.dataCompromisso)} ${tarefa.dataCompromisso}`
+        : "";
+    case "prazoFatal": {
+      // mesma regra da célula: prazo fatal, ou o vencimento quando não há (D6)
+      const prazo = tarefa.prazoFatal ?? tarefa.dataVencimento;
+      return `${dataBr(prazo)} ${prazo}`;
+    }
+    case "responsavel":
+      return nomeDeResponsavel(tarefa.responsavelId);
+    default:
+      return "";
+  }
+}
+
+/** Input pequeno + (x) de limpar — montado dentro de cada `<th>`. */
+function InputColuna({
+  campo,
+  filtros,
+  aoMudar,
+}: {
+  campo: CampoFiltro;
+  filtros: FiltrosColuna;
+  aoMudar: (campo: CampoFiltro, valor: string) => void;
+}) {
+  const config = FILTROS.find((item) => item.campo === campo);
+  if (!config) return null;
+  const valor = filtros[campo];
+  return (
+    <div className="mt-1.5 flex items-center gap-1">
+      <Input
+        value={valor}
+        onChange={(evento) => aoMudar(campo, evento.target.value)}
+        placeholder={config.placeholder}
+        aria-label={`Filtrar por ${config.rotulo}`}
+        // `normal-case`: o `<tr>` do cabeçalho deixa tudo em caixa alta e o texto
+        // digitado no input não deve herdar isso
+        className={`h-7 px-2 text-xs normal-case ${config.largura}`}
+      />
+      {valor !== "" && (
+        <button
+          type="button"
+          onClick={() => aoMudar(campo, "")}
+          aria-label={`Limpar filtro de ${config.rotulo}`}
+          title={`Limpar filtro de ${config.rotulo}`}
+          className="shrink-0 w-5 h-5 inline-grid place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
  * Lista de tarefas no padrão ADVBOX, atualizada em 16/10/2026 (pedido do titular):
  *
  * - os quatro marcadores antigos (OK, Importante, Urgente, Lido) SAIRAM — o OK virou o
  *   campo **Status** (Aberta/Concluída) no detalhe, e Importante/Urgente/Lido não existem
  *   mais;
  * - Prioridade virou CAMPO DE TEXTO (ex.: "Alta", "Baixa") — coluna própria;
- * - coluna Tarefa enxuta (base 1366x768) para o botão Histórico ficar visível sem rolar.
+ * - coluna Tarefa enxuta (base 1366x768) para o botão Histórico ficar visível sem rolar;
+ * - filtro por coluna embaixo de cada cabeçalho (Correção 6) — local, em memória.
  *
  * A linha inteira abre a janela central de detalhe; linha atrasada ganha fundo vermelho.
  */
 export function TabelaTarefas({
   tarefas, pagina, porPagina, onPagina, onPorPagina, onAbrir, onHistorico, nomeDeResponsavel,
 }: TabelaTarefasProps) {
+  /** Filtro por coluna (local, Correção 6) — vê FILTROS acima. */
+  const [filtros, setFiltros] = useState<FiltrosColuna>(FILTROS_VAZIOS);
+
+  const mudarFiltro = (campo: CampoFiltro, valor: string) =>
+    setFiltros((atual) => ({ ...atual, [campo]: valor }));
+
+  // Filtro mudou? Volta para a primeira página — senão o recorte pode cair numa
+  // página que os itens filtrados não alcançam mais.
+  useEffect(() => {
+    onPagina(0);
+  }, [filtros, onPagina]);
+
+  const filtradas = useMemo(
+    () =>
+      tarefas.filter((tarefa) =>
+        FILTROS.every(({ campo }) => {
+          const termo = filtros[campo].trim().toLowerCase();
+          if (!termo) return true;
+          return textoDaColuna(campo, tarefa, nomeDeResponsavel)
+            .toLowerCase()
+            .includes(termo);
+        }),
+      ),
+    // `nomeDeResponsavel` vem inline da tela e muda a cada render — inócuo (lista curta)
+    [tarefas, filtros, nomeDeResponsavel],
+  );
+
+  const filtrando = FILTROS.some(({ campo }) => filtros[campo].trim() !== "");
   const inicio = pagina * porPagina;
-  const visiveis = tarefas.slice(inicio, inicio + porPagina);
-  const total = tarefas.length;
+  const visiveis = filtradas.slice(inicio, inicio + porPagina);
+  const total = filtradas.length;
   const ultima = Math.max(0, Math.ceil(total / porPagina) - 1);
   const de = total === 0 ? 0 : inicio + 1;
   const ate = Math.min(inicio + porPagina, total);
@@ -58,14 +201,42 @@ export function TabelaTarefas({
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="bg-secondary/60 text-xs uppercase tracking-wide text-muted-foreground">
-              <th className="px-3 py-2.5 text-left">Status</th>
-              <th className="px-3 py-2.5 text-left">Tarefa</th>
-              <th className="px-3 py-2.5 text-left">Cliente</th>
-              <th className="px-3 py-2.5 text-left">Prioridade</th>
-              <th className="px-3 py-2.5 text-left whitespace-nowrap">Data compromisso</th>
-              <th className="px-3 py-2.5 text-left whitespace-nowrap">Prazo fatal</th>
-              <th className="px-3 py-2.5 text-left">Responsável</th>
-              <th className="px-3 py-2.5 text-left">Histórico</th>
+              <th className="px-3 py-2.5 text-left align-bottom">
+                Status
+                {/* respiro para a linha de filtros alinhar os rótulos das colunas */}
+                <div className="mt-1.5 h-7" aria-hidden="true" />
+              </th>
+              {/* Input de filtro embaixo de cada coluna (Correção 6) — local, em
+                  memória; os de Status e Histórico ficam de fora: Status já tem os
+                  cards-filtro e Histórico é ação de linha. */}
+              <th className="px-3 py-2.5 text-left align-bottom">
+                Tarefa
+                <InputColuna campo="tarefa" filtros={filtros} aoMudar={mudarFiltro} />
+              </th>
+              <th className="px-3 py-2.5 text-left align-bottom">
+                Cliente
+                <InputColuna campo="cliente" filtros={filtros} aoMudar={mudarFiltro} />
+              </th>
+              <th className="px-3 py-2.5 text-left align-bottom">
+                Prioridade
+                <InputColuna campo="prioridade" filtros={filtros} aoMudar={mudarFiltro} />
+              </th>
+              <th className="px-3 py-2.5 text-left align-bottom whitespace-nowrap">
+                Data compromisso
+                <InputColuna campo="compromisso" filtros={filtros} aoMudar={mudarFiltro} />
+              </th>
+              <th className="px-3 py-2.5 text-left align-bottom whitespace-nowrap">
+                Prazo fatal
+                <InputColuna campo="prazoFatal" filtros={filtros} aoMudar={mudarFiltro} />
+              </th>
+              <th className="px-3 py-2.5 text-left align-bottom">
+                Responsável
+                <InputColuna campo="responsavel" filtros={filtros} aoMudar={mudarFiltro} />
+              </th>
+              <th className="px-3 py-2.5 text-left align-bottom">
+                Histórico
+                <div className="mt-1.5 h-7" aria-hidden="true" />
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -172,7 +343,7 @@ export function TabelaTarefas({
             {visiveis.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                  Nada nesta página.
+                  {filtrando ? "Nada com os filtros de coluna." : "Nada nesta página."}
                 </td>
               </tr>
             )}

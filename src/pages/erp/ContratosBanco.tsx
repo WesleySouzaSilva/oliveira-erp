@@ -153,11 +153,11 @@ export default function ContratosBanco() {
     <div className="p-4 sm:p-6 lg:p-10 space-y-6">
       <PageHeader
         icon={Landmark}
-        title="Contratos com o Banco"
+        title="Contratos Cliente"
         subtitle={`${total} contrato${total === 1 ? "" : "s"}${
           filtrando ? " (com filtro)" : ""
-        } — operações de crédito/financiamento dos clientes`}
-        breadcrumb={[{ label: "Módulos na API" }, { label: "Clientes" }, { label: "Contratos com o Banco" }]}
+        } — contratos dos clientes COM OS BANCOS`}
+        breadcrumb={[{ label: "Comercial" }, { label: "Contratos Cliente" }]}
         actions={
           <Button
             size="sm"

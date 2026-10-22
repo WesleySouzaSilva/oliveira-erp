@@ -163,7 +163,7 @@ export default function Contratos() {
     <div className="p-4 sm:p-6 lg:p-10 space-y-6">
       <PageHeader
         icon={FileSignature}
-        title="Contratos Clientes"
+        title="Contratos"
         subtitle={`${total} contrato${total === 1 ? "" : "s"}${busca.trim() ? " (com filtro)" : ""}`}
         breadcrumb={[{ label: "Módulos na API" }, { label: "Clientes" }, { label: "Contratos Clientes" }]}
         actions={

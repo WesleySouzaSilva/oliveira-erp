@@ -179,20 +179,24 @@ export default function LayoutErp() {
             Clientes
           </p>
           {itemMenu(<Users className="w-4 h-4" />, "Base", "/erp/clientes")}
-          {/* Contratos do cliente com o BANCO (correção 4, Fase 3) — os contratos com o
-              ESCRITÓRIO seguem no grupo Comercial ("Contratos Cliente") */}
-          {itemMenu(<Landmark className="w-4 h-4" />, "Contratos", "/erp/contratos-banco")}
-          {/* Grupo Comercial (correção 3 do plano de correções 22/10): os contratos
-              do escritório com o cliente moram aqui — "Contratos Cliente" */}
+          {/* Contratos do cliente COM O ESCRITÓRIO ficam no grupo Clientes (correção do
+              titular 22/10: em Clientes → Contratos é o contrato com o escritório) */}
+          {itemMenu(
+            <FileSignature className="w-4 h-4" />,
+            "Contratos",
+            "/erp/contratos",
+          )}
+          {/* Grupo Comercial: "Contratos Cliente" = contrato do cliente COM OS BANCOS
+              (correção do titular 22/10) */}
           <p
             className={`px-3 pt-4 pb-1 text-[11px] font-semibold uppercase text-muted-foreground tracking-wide ${recolhido ? "lg:hidden" : ""}`}
           >
             Comercial
           </p>
           {itemMenu(
-            <FileSignature className="w-4 h-4" />,
+            <Landmark className="w-4 h-4" />,
             "Contratos Cliente",
-            "/erp/contratos",
+            "/erp/contratos-banco",
           )}
           {/* Ferramentas: códigos dos tribunais — leitura para TODOS (a gestão
               (cadastrar/remover/histórico) é só admin, barrada pela API) */}

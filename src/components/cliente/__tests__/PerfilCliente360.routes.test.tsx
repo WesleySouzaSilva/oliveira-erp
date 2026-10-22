@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 // @ts-ignore - node builtin no ambiente de teste
 import fs from "fs";
 // @ts-ignore - node builtin no ambiente de teste
@@ -11,13 +12,22 @@ declare const process: { cwd(): string };
 vi.mock("@/integrations/supabase/client", () => {
   const builder = (data: any[]) => {
     const result = { data, error: null };
-    const b: any = {};
-    b.select = () => b;
-    b.order = () => b;
-    b.in = () => b;
-    b.is = () => b;
-    b.eq = () => b;
-    b.then = (resolve: any, reject: any) => Promise.resolve(result).then(resolve, reject);
+    // Cadeia supabase inteira vira espelho: QUALQUER método devolve o próprio builder e o
+    // await resolve `{ data, error: null }` — os componentes do Perfil 360 encadeiam
+    // .select().eq().order().limit() (e o que for surgindo) sem o mock precisar listar
+    // cada método (faltava .limit e o TimelineCliente derrubava o teste).
+    const b: any = new Proxy(
+      {},
+      {
+        get: (_alvo, prop) => {
+          if (prop === "then") {
+            return (resolve: any, reject: any) => Promise.resolve(result).then(resolve, reject);
+          }
+          if (typeof prop === "symbol") return undefined;
+          return (..._args: unknown[]) => b;
+        },
+      },
+    );
     return b;
   };
   return {
@@ -60,15 +70,26 @@ vi.mock("@/integrations/supabase/client", () => {
 
 import { PerfilCliente360 } from "@/components/cliente/PerfilCliente360";
 
+/**
+ * O Perfil 360 usa react-query (ex.: `ProcessosJudiciaisCliente`) — na App o provider já
+ * existe; aqui o wrapper evita o "No QueryClient set" que derrubava os testes de rotas.
+ */
+function renderPerfil() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <PerfilCliente360 produtor="João Silva" hideHeader />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
 describe("Perfil 360 — links e rotas", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("renderiza link de processo apontando para /processos/:id sem query de tab", async () => {
-    render(
-      <MemoryRouter>
-        <PerfilCliente360 produtor="João Silva" hideHeader />
-      </MemoryRouter>
-    );
+    renderPerfil();
 
     const link = await waitFor(() =>
       screen.getByRole("link", { name: /Abrir/i })
@@ -80,11 +101,7 @@ describe("Perfil 360 — links e rotas", () => {
   });
 
   it("nenhum link interno do Perfil 360 aponta para /clientes com query de tab", async () => {
-    const { container } = render(
-      <MemoryRouter>
-        <PerfilCliente360 produtor="João Silva" hideHeader />
-      </MemoryRouter>
-    );
+    const { container } = renderPerfil();
 
     await waitFor(() => screen.getByRole("link", { name: /Abrir/i }));
     const links = Array.from(container.querySelectorAll("a"));

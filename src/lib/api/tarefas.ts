@@ -39,6 +39,13 @@ export interface Tarefa {
   tarefaFutura: boolean;
   prioridade: "normal" | "alta" | "urgente" | string;
   nomeCliente?: string | null;
+  /** Tipo de tarefa escolhido (V21): o NOME do tipo e' o que aparece em `titulo`. */
+  tipoId?: string | null;
+  tipoNome?: string | null;
+  /** Cliente dona da tarefa (V21) — o nome tambem e' copiado para `nomeCliente`. */
+  clienteId?: string | null;
+  /** Recorrencia (V21): `unica` (padrao), `diaria`, `semanal` ou `mensal`. */
+  recorrencia?: string | null;
   /** Setor que ENVIOU a tarefa (rotulo, vem da formula da API) — coluna "Tarefa". */
   setorNome?: string | null;
   /** Número do contrato a que a tarefa pertence — coluna "Tarefa". */
@@ -72,6 +79,16 @@ export interface TarefaNova {
    * Com `responsavelId` preenchido, a tarefa já nasce com outro responsável.
    */
   setorId?: string | null;
+  // ---- V21: tipos de tarefa, cliente vinculado e recorrencia ----
+  /**
+   * Tipo de tarefa: se vier, a API grava o NOME DO TIPO como `titulo` (o titulo enviado
+   * e' ignorado — mas precisa continuar vindo preenchido, o `@NotBlank` do DTO vale).
+   */
+  tipoId?: string | null;
+  /** Cliente dona da tarefa — valida na organizacao e copia o nome para `nomeCliente`. */
+  clienteId?: string | null;
+  /** Recorrencia: `unica` (padrao), `diaria`, `semanal` ou `mensal`. */
+  recorrencia?: string | null;
 }
 
 /**
@@ -99,17 +116,36 @@ export interface TarefaAtualizacao {
   lido?: boolean;
   privada?: boolean;
   tarefaFutura?: boolean;
+  // ---- V21: tipos de tarefa, cliente vinculado e recorrencia (nulo nao muda) ----
+  /** Tipo de tarefa: valida na organizacao e o NOME do tipo vira o titulo gravado. */
+  tipoId?: string;
+  /** Cliente dona da tarefa — valida na organizacao e copia o nome para `nomeCliente`. */
+  clienteId?: string;
+  /** Recorrencia: `unica`, `diaria`, `semanal` ou `mensal`. */
+  recorrencia?: string;
 }
 
 /** Onde a busca de texto procura — o "tipo de busca" do select da tela de tarefas. */
-export type BuscaTarefas = "titulo" | "descricao" | "cliente";
+export type BuscaTarefas = "titulo" | "descricao" | "cliente" | "processo";
+
+/**
+ * Catálogo de recorrência (V21): as chaves que a API aceita (`unica` é o padrão) e os
+ * rótulos das telas — select do form de nova tarefa, do encaminhar do contrato e do
+ * detalhe, para os três falarem a mesma língua.
+ */
+export const RECORRENCIAS_TAREFA = [
+  { valor: "unica", rotulo: "Única" },
+  { valor: "diaria", rotulo: "Diária" },
+  { valor: "semanal", rotulo: "Semanal" },
+  { valor: "mensal", rotulo: "Mensal" },
+] as const;
 
 export interface FiltroTarefas {
   /** Recorte "Minhas tarefas" (o painel do próprio usuário). */
   minhas?: boolean;
   concluida?: boolean;
   busca?: string;
-  /** `titulo`, `descricao` ou `cliente`; sem ele a API procura em título OU cliente. */
+  /** `titulo`, `descricao`, `cliente` ou `processo` (V21); sem ele a API procura em título OU cliente. */
   buscaEm?: BuscaTarefas;
   processoId?: string;
   page?: number;
@@ -143,6 +179,42 @@ export function atualizarTarefa(id: string, dados: TarefaAtualizacao): Promise<T
 /** Marca como concluída/pendente — a conclusão grava a auditoria na API. */
 export function concluirTarefa(id: string, concluida: boolean): Promise<Tarefa> {
   return atualizarTarefa(id, { concluida });
+}
+
+// ------------------------------------------------------------ tipos de tarefa (V21)
+
+/**
+ * Tipo de tarefa da organização (`/tarefas/tipos`): o rotulo escolhido no form que vira
+ * o TITULO gravado da tarefa. Leitura para qualquer autenticado; escrita só admin/ceo.
+ */
+export interface TarefaTipo {
+  id: string;
+  nome: string;
+  /** Tipo desligado sai do seletor da tela (a lista devolve os dois). */
+  ativo: boolean;
+}
+
+/** Todos os tipos da organização (inclusive desligados — filtrar por `ativo` na tela). */
+export function listarTiposTarefa(): Promise<TarefaTipo[]> {
+  return apiFetch<TarefaTipo[]>("/tarefas/tipos");
+}
+
+/** Cadastra um tipo (201). Só admin/ceo; nome repetido na organização → 409. */
+export function criarTipoTarefa(dados: { nome: string }): Promise<TarefaTipo> {
+  return apiFetch<TarefaTipo>("/tarefas/tipos", { method: "POST", body: dados });
+}
+
+/** Edição do tipo (PUT): campos nulos não mudam (nome e/ou ativo). Só admin/ceo. */
+export function atualizarTipoTarefa(
+  id: string,
+  dados: { nome?: string; ativo?: boolean },
+): Promise<TarefaTipo> {
+  return apiFetch<TarefaTipo>(`/tarefas/tipos/${id}`, { method: "PUT", body: dados });
+}
+
+/** Apaga o tipo (204): as tarefas do tipo ficam com o título já gravado. Só admin/ceo. */
+export function excluirTipoTarefa(id: string): Promise<void> {
+  return apiFetch<void>(`/tarefas/tipos/${id}`, { method: "DELETE" });
 }
 
 // ------------------------------------------------------------ movimentação (timeline)
@@ -216,4 +288,27 @@ export function encaminharTarefa(
 /** Baixa um anexo da tarefa (o banco guarda só o caminho; os bytes ficam no servidor). */
 export function baixarAnexoTarefa(anexoId: string, nome: string): Promise<void> {
   return baixarArquivo(`/tarefas/anexos/${anexoId}/conteudo`, nome);
+}
+
+// ------------------------------------------------------------ anexos da tarefa (V21)
+
+/**
+ * TODOS os anexos da tarefa (`GET /tarefas/{id}/arquivos`): inclusive os pendurados na
+ * linha `criada` (os que subiram na criação). Mesmo gate do download da API.
+ */
+export function listarArquivosTarefa(tarefaId: string): Promise<TarefaAnexo[]> {
+  return apiFetch<TarefaAnexo[]>(`/tarefas/${tarefaId}/arquivos`);
+}
+
+/**
+ * Anexa arquivos a tarefa JÁ CRIADA (`POST /tarefas/{id}/arquivos`, multipart com o
+ * campo `arquivos`): os registros ficam na linha `criada` da trilha e a API devolve a
+ * lista ATUALIZADA de anexos. 400 se a lista vier vazia ou a tarefa estiver concluída;
+ * o gate (responsável/admin/ceo) é checado na API.
+ */
+export function anexarArquivosTarefa(tarefaId: string, files: File[]): Promise<TarefaAnexo[]> {
+  const form = new FormData();
+  for (const arquivo of files) form.append("arquivos", arquivo);
+  // multipart: o navegador monta o Content-Type (http.ts já trata FormData)
+  return apiFetch<TarefaAnexo[]>(`/tarefas/${tarefaId}/arquivos`, { method: "POST", body: form });
 }

@@ -63,6 +63,15 @@ vi.mock("@/lib/api/contratos", () => {
 
 vi.mock("@/lib/api/tarefas", () => ({
   criarTarefa: vi.fn(async () => ({ id: "tarefa-1" })),
+  // O "Primeira tarefa do contrato" lista os tipos para o select novo (Fase 4).
+  listarTiposTarefa: vi.fn(async () => []),
+  // Constante pura da lib: o mock do módulo inteiro precisa repassá-la.
+  RECORRENCIAS_TAREFA: [
+    { valor: "unica", rotulo: "Única" },
+    { valor: "diaria", rotulo: "Diária" },
+    { valor: "semanal", rotulo: "Semanal" },
+    { valor: "mensal", rotulo: "Mensal" },
+  ],
 }));
 
 vi.mock("@/lib/api/objetos", () => ({

@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { mensagemDeErro } from "@/lib/api/http";
-import { criarTarefa } from "@/lib/api/tarefas";
+import { criarTarefa, listarTiposTarefa, RECORRENCIAS_TAREFA, type TarefaTipo } from "@/lib/api/tarefas";
 import { listarSetores, type Setor } from "@/lib/api/setores";
 
 const HOJE = new Date().toISOString().split("T")[0];
@@ -61,16 +61,32 @@ export function EncaminharContratoTarefa({
   const [setores, setSetores] = useState<Setor[]>([]);
   const [setorId, setSetorId] = useState("");
   const [enviando, setEnviando] = useState(false);
+  /**
+   * Campos novos OPCIONAIS (Fase 4, 22/10/2026): tipo de tarefa, data fatal e
+   * recorrência. Sem tipo, o título do contrato continua sendo o da tarefa — com tipo,
+   * a API grava o nome do tipo no lugar (o título enviado é ignorado).
+   */
+  const [tipos, setTipos] = useState<TarefaTipo[]>([]);
+  const [tipoId, setTipoId] = useState("");
+  const [prazoFatal, setPrazoFatal] = useState("");
+  const [recorrencia, setRecorrencia] = useState("unica");
   /** Garante UMA tarefa por contrato: nem o confirmar nem o fechar duplicam. */
   const criada = useRef(false);
 
   useEffect(() => {
     if (aberto) {
       setSetorId("");
+      setTipoId("");
+      setPrazoFatal("");
+      setRecorrencia("unica");
       criada.current = false;
       void listarSetores()
         .then(setSetores)
         .catch(() => setSetores([]));
+      // Tipos ativos para o seletor (leitura aberta; erro só deixa o select vazio).
+      void listarTiposTarefa()
+        .then((lista) => setTipos(lista.filter((tipo) => tipo.ativo)))
+        .catch(() => setTipos([]));
     }
   }, [aberto]);
 
@@ -85,6 +101,9 @@ export function EncaminharContratoTarefa({
         titulo,
         descricao: `Contrato nº ${numero} — primeira tarefa do fluxo, criada junto com o cadastro do contrato em ${new Date().toLocaleDateString("pt-BR")}.`,
         dataVencimento: HOJE,
+        prazoFatal: prazoFatal || undefined,
+        recorrencia,
+        tipoId: tipoId || undefined,
         nomeCliente: clienteNome,
         // Vínculo com o contrato (correção 2): sem ele a tarefa nasce órfã e a timeline
         // não tem como mostrar os arquivos do contrato no primeiro item do histórico.
@@ -137,6 +156,57 @@ export function EncaminharContratoTarefa({
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Vencimento (fixo = hoje)</Label>
             <Input value={new Date(`${HOJE}T12:00:00`).toLocaleDateString("pt-BR")} readOnly disabled />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground" htmlFor="tarefa-contrato-tipo">
+              Tipo de tarefa (opcional)
+            </Label>
+            <Select value={tipoId} onValueChange={setTipoId}>
+              <SelectTrigger id="tarefa-contrato-tipo">
+                <SelectValue placeholder="Sem tipo — usa o título do contrato" />
+              </SelectTrigger>
+              <SelectContent>
+                {tipos.map((tipo) => (
+                  <SelectItem key={tipo.id} value={tipo.id}>
+                    {tipo.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              Com tipo escolhido, o nome do tipo vira o título da tarefa (o texto acima é
+              ignorado pela API).
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground" htmlFor="tarefa-contrato-fatal">
+                Data fatal (opcional)
+              </Label>
+              <Input
+                id="tarefa-contrato-fatal"
+                type="date"
+                value={prazoFatal}
+                onChange={(evento) => setPrazoFatal(evento.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground" htmlFor="tarefa-contrato-recorrencia">
+                Recorrência
+              </Label>
+              <Select value={recorrencia} onValueChange={setRecorrencia}>
+                <SelectTrigger id="tarefa-contrato-recorrencia">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RECORRENCIAS_TAREFA.map((item) => (
+                    <SelectItem key={item.valor} value={item.valor}>
+                      {item.rotulo}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground" htmlFor="tarefa-contrato-setor">

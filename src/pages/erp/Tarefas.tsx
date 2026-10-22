@@ -5,7 +5,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   AlertTriangle, BarChart3, Bell, CheckCircle2, Clock, Kanban, LayoutList,
-  ListChecks, Plus, Save, Search, User, X,
+  ListChecks, Paperclip, Plus, Save, Search, User, X,
 } from "lucide-react";
 import { CalendarDays } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -28,12 +28,15 @@ import {
 } from "@/components/ui/dialog";
 import { ErroApi, mensagemDeErro, usuarioApi } from "@/lib/api/http";
 import {
-  atualizarTarefa, criarTarefa, listarHistoricoTarefa, listarTarefas, prazoDaTarefa,
-  type BuscaTarefas, type Tarefa,
+  anexarArquivosTarefa, atualizarTarefa, baixarAnexoTarefa, criarTarefa,
+  listarArquivosTarefa, listarHistoricoTarefa, listarTarefas, listarTiposTarefa,
+  prazoDaTarefa, RECORRENCIAS_TAREFA as RECORRENCIAS,
+  type BuscaTarefas, type Tarefa, type TarefaAnexo, type TarefaNova, type TarefaTipo,
 } from "@/lib/api/tarefas";
 import { buscarContrato } from "@/lib/api/contratos";
 import { TabelaTarefas } from "@/pages/erp/TarefasLista";
 import { corDePrioridade } from "@/lib/prioridade";
+import { formatarTamanho } from "@/lib/formatarTamanho";
 import { CalendarioTarefas } from "@/pages/erp/TarefasCalendario";
 import { EncaminharTarefa, TarefaTimeline } from "@/components/erp/TarefaMovimentacao";
 import { mapaDeNomes, listarMembros, type Membro } from "@/lib/api/membros";
@@ -78,6 +81,32 @@ const PRIORIDADES = [
 const prioridadeValida = (valor?: string | null) =>
   PRIORIDADES.some((item) => item.valor === valor) ? (valor as string) : "normal";
 
+/**
+ * Rótulo da recorrência no detalhe — sem valor gravado a API vale `unica`
+ * (o catálogo `RECORRENCIAS_TAREFA` vem da lib, junto do contrato da API).
+ */
+const recorrenciaRotulo = (valor?: string | null) =>
+  RECORRENCIAS.find((item) => item.valor === valor)?.rotulo ?? "Única";
+
+/**
+ * Id do processo no form: a API aceita só UUID (a tabela `processos` entra com o módulo
+ * processo — número CNJ fica para lá, `V5__tarefa.sql`).
+ */
+const EH_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Cards de resumo do topo: cada um vira filtro da lista (1 por vez) — clicar no card
+ * selecionado limpa e volta ao total, como o chip do calendário.
+ */
+type CardFiltro = "total" | "pendentes" | "atrasadas" | "concluidas";
+
+const ROTULOS_CARD: Record<CardFiltro, string> = {
+  total: "Total",
+  pendentes: "Pendentes",
+  atrasadas: "Atrasadas",
+  concluidas: "Concluídas",
+};
+
 type Vista = "lista" | "kanban";
 
 const COLUNAS_KANBAN = [
@@ -94,8 +123,11 @@ const dataBr = (iso: string) =>
 
 function statusDaTarefa(t: Tarefa): ColunaKanban {
   if (t.concluida) return "concluidas";
-  if (t.dataVencimento < HOJE) return "atrasadas";
-  if (t.dataVencimento === HOJE) return "hoje";
+  // Regra única de atraso (D6): prazo fatal, ou vencimento quando não há — mesma medida
+  // da tabela e do calendário, para o kanban não divergir do resto da tela.
+  const prazo = prazoDaTarefa(t);
+  if (prazo < HOJE) return "atrasadas";
+  if (prazo === HOJE) return "hoje";
   return "proximas";
 }
 
@@ -124,6 +156,8 @@ export default function TarefasApi() {
   const [semMaisPaginas, setSemMaisPaginas] = useState(true);
   /** Dia clicado no calendario: filtra a tabela da aba Lista (null = todas). */
   const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null);
+  /** Card de resumo clicado (topo): filtra a lista — 1 por vez; null = total. */
+  const [cardFiltro, setCardFiltro] = useState<CardFiltro | null>(null);
 
   const [dialogNova, setDialogNova] = useState(false);
   const [tarefaAberta, setTarefaAberta] = useState<Tarefa | null>(null);
@@ -289,12 +323,25 @@ export default function TarefasApi() {
         : coluna === "hoje"
         ? HOJE
         : format(addDays(new Date(), 7), "yyyy-MM-dd");
-    if (tarefa.dataVencimento === novaData && !tarefa.concluida) return;
+    if (prazoDaTarefa(tarefa) === novaData && !tarefa.concluida) return;
+    // Regra única de atraso (D6): o kanban agrupa por prazoDaTarefa — junto o prazo fatal
+    // ao reagendar, senão o card não sai da coluna de quem já tem prazo marcado.
     setTarefas((atual) =>
-      atual.map((t) => (t.id === tarefa.id ? { ...t, dataVencimento: novaData } : t)),
+      atual.map((t) =>
+        t.id === tarefa.id
+          ? {
+              ...t,
+              dataVencimento: novaData,
+              ...(t.prazoFatal ? { prazoFatal: novaData } : {}),
+            }
+          : t,
+      ),
     );
     try {
-      await atualizarTarefa(tarefa.id, { dataVencimento: novaData });
+      await atualizarTarefa(tarefa.id, {
+        dataVencimento: novaData,
+        ...(tarefa.prazoFatal ? { prazoFatal: novaData } : {}),
+      });
       toast.success(`Reagendada para ${dataBr(novaData)}`);
     } catch (erro) {
       toast.error(mensagemDeErro(erro));
@@ -329,7 +376,7 @@ export default function TarefasApi() {
    * (prazo fatal, ou vencimento quando nao ha prazo), para o numero do dia e as
    * linhas de baixo (tabela e colunas do kanban) sempre baterem.
    */
-  const tarefasFiltradas = useMemo(
+  const tarefasDoDia = useMemo(
     () =>
       diaSelecionado
         ? tarefas.filter((tarefa) => prazoDaTarefa(tarefa) === diaSelecionado)
@@ -337,21 +384,76 @@ export default function TarefasApi() {
     [tarefas, diaSelecionado],
   );
 
+  /**
+   * Card clicado por cima do dia (filtros compostos — card E dia valem juntos; 1 card
+   * por vez): `total` (ou card nenhum) deixa a lista do dia passar inteira.
+   */
+  const tarefasFiltradas = useMemo(() => {
+    if (!cardFiltro || cardFiltro === "total") return tarefasDoDia;
+    if (cardFiltro === "pendentes") return tarefasDoDia.filter((t) => !t.concluida);
+    if (cardFiltro === "atrasadas") {
+      return tarefasDoDia.filter((t) => !t.concluida && prazoDaTarefa(t) < hoje0);
+    }
+    return tarefasDoDia.filter((t) => t.concluida);
+  }, [tarefasDoDia, cardFiltro, hoje0]);
+
+  /**
+   * Contagens dos quatro cards SEM o recorte do card (só o dia): os numeros ficam
+   * estáveis com o filtro ativo — clicar mostra o resultado, não some com o card.
+   */
+  const contagens = useMemo(
+    () => ({
+      total: tarefasDoDia.length,
+      pendentes: tarefasDoDia.filter((t) => !t.concluida).length,
+      atrasadas: tarefasDoDia.filter((t) => !t.concluida && prazoDaTarefa(t) < hoje0).length,
+      concluidas: tarefasDoDia.filter((t) => t.concluida).length,
+    }),
+    [tarefasDoDia, hoje0],
+  );
+
+  /** Card vira filtro: clicar no que já está selecionado limpa e volta ao total. */
+  const alternarCardFiltro = useCallback((valor: CardFiltro) => {
+    setCardFiltro((atual) => (atual === valor ? null : valor));
+  }, []);
+
   const campoBuscaPlaceholder =
     CAMPOS_BUSCA.find((opcao) => opcao.valor === buscaEm)?.placeholder ?? CAMPOS_BUSCA[0].placeholder;
 
   const agrupadas = useMemo(() => {
     const pendentes = tarefasFiltradas.filter((t) => !t.concluida);
     return {
-      atrasadas: pendentes.filter((t) => t.dataVencimento < hoje0),
-      hoje: pendentes.filter((t) => t.dataVencimento === hoje0),
-      proximas: pendentes.filter((t) => t.dataVencimento > hoje0),
+      atrasadas: pendentes.filter((t) => prazoDaTarefa(t) < hoje0),
+      hoje: pendentes.filter((t) => prazoDaTarefa(t) === hoje0),
+      proximas: pendentes.filter((t) => prazoDaTarefa(t) > hoje0),
       concluidas: tarefasFiltradas.filter((t) => t.concluida),
     };
   }, [tarefasFiltradas, hoje0]);
 
-  // Trocar o dia zera a pagina da tabela.
-  useEffect(() => setPagina(0), [diaSelecionado]);
+  // Trocar o dia ou o card zera a pagina da tabela.
+  useEffect(() => setPagina(0), [diaSelecionado, cardFiltro]);
+
+  /** Filtro que encurta a lista de verdade — o card `total` conta como nada filtrado. */
+  const temFiltroAtivo = Boolean(diaSelecionado) || (cardFiltro !== null && cardFiltro !== "total");
+
+  /**
+   * Props dos cards-filtro: o selecionado ganha borda accent + `aria-pressed` (1 por
+   * vez); o KpiCard repassa o resto para a `div` dele (kpi-card.tsx).
+   */
+  const cardFiltroProps = (valor: CardFiltro) => ({
+    role: "button" as const,
+    tabIndex: 0,
+    "aria-pressed": cardFiltro === valor,
+    onClick: () => alternarCardFiltro(valor),
+    onKeyDown: (evento: React.KeyboardEvent<HTMLDivElement>) => {
+      if (evento.key === "Enter" || evento.key === " ") {
+        evento.preventDefault();
+        alternarCardFiltro(valor);
+      }
+    },
+    className: `p-4 cursor-pointer ${
+      cardFiltro === valor ? "border-accent ring-1 ring-accent/40 shadow-card-hover" : ""
+    }`,
+  });
 
   const temAlgo = tarefas.length > 0;
 
@@ -450,19 +552,32 @@ export default function TarefasApi() {
         </div>
       </div>
 
-      {/* KPIs (esquerda, 2 colunas x 2 linhas) + calendario maior no canto — so na aba Lista */}
+      {/* Cards de resumo VIRAM FILTRO (22/10/2026): 1 por vez, clicar de novo limpa —
+          os quatro contam o dia do calendario, e o card clicado recorta a lista embaixo */}
       <div className="grid lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start">
         <div className="grid grid-cols-2 gap-3">
-          <KpiCard label="Total" value={tarefas.length} icon={BarChart3} className="p-4" />
+          <KpiCard label="Total" value={contagens.total} icon={BarChart3} {...cardFiltroProps("total")} />
           <KpiCard
             label="Pendentes"
-            value={agrupadas.atrasadas.length + agrupadas.hoje.length + agrupadas.proximas.length}
+            value={contagens.pendentes}
             icon={Clock}
             tone="info"
-            className="p-4"
+            {...cardFiltroProps("pendentes")}
           />
-          <KpiCard label="Atrasadas" value={agrupadas.atrasadas.length} icon={AlertTriangle} tone="danger" className="p-4" />
-          <KpiCard label="Concluídas" value={agrupadas.concluidas.length} icon={CheckCircle2} tone="success" className="p-4" />
+          <KpiCard
+            label="Atrasadas"
+            value={contagens.atrasadas}
+            icon={AlertTriangle}
+            tone="danger"
+            {...cardFiltroProps("atrasadas")}
+          />
+          <KpiCard
+            label="Concluídas"
+            value={contagens.concluidas}
+            icon={CheckCircle2}
+            tone="success"
+            {...cardFiltroProps("concluidas")}
+          />
         </div>
 
         {/* Calendario nas DUAS abas (pedido 16/10): o dia escolhido filtra o que
@@ -475,21 +590,40 @@ export default function TarefasApi() {
         />
       </div>
 
-      {/* Filtro do dia escolhido no calendario (vale para as duas abas) */}
-      {diaSelecionado && (
+      {/* Filtros ativos (vale para as duas abas): card do topo e/ou dia do calendario */}
+      {(diaSelecionado || cardFiltro) && (
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-secondary font-medium text-foreground">
-            <CalendarDays className="w-3.5 h-3.5" />
-            Tarefas de {dataBr(diaSelecionado)}
-            <span className="text-muted-foreground">({tarefasFiltradas.length})</span>
-          </span>
-          <button
-            type="button"
-            onClick={() => setDiaSelecionado(null)}
-            className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <X className="w-3.5 h-3.5" /> Limpar (ver todas)
-          </button>
+          {cardFiltro && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-secondary font-medium text-foreground">
+              <BarChart3 className="w-3.5 h-3.5" />
+              {ROTULOS_CARD[cardFiltro]}
+              <span className="text-muted-foreground">({contagens[cardFiltro]})</span>
+              <button
+                type="button"
+                aria-label={`Limpar filtro ${ROTULOS_CARD[cardFiltro]}`}
+                onClick={() => setCardFiltro(null)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </span>
+          )}
+          {diaSelecionado && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-secondary font-medium text-foreground">
+              <CalendarDays className="w-3.5 h-3.5" />
+              Tarefas de {dataBr(diaSelecionado)}
+              <span className="text-muted-foreground">({tarefasDoDia.length})</span>
+            </span>
+          )}
+          {diaSelecionado && (
+            <button
+              type="button"
+              onClick={() => setDiaSelecionado(null)}
+              className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="w-3.5 h-3.5" /> Limpar (ver todas)
+            </button>
+          )}
         </div>
       )}
 
@@ -510,11 +644,11 @@ export default function TarefasApi() {
             onHistorico={setTarefaHistorico}
             nomeDeResponsavel={(userId) => nomes.get(userId) || "—"}
           />
-        ) : diaSelecionado ? (
+        ) : temFiltroAtivo ? (
           <EmptyState
-            icon={CalendarDays}
-            title="Nenhuma tarefa neste dia"
-            description={`Nenhuma tarefa com prazo em ${dataBr(diaSelecionado)}. Escolha outro dia ou limpe o filtro.`}
+            icon={ListChecks}
+            title="Nenhum resultado no filtro atual"
+            description="Nenhuma tarefa bate com os filtros escolhidos — clique de novo no card ou limpe o dia do calendário."
           />
         ) : (
           <EmptyState
@@ -610,19 +744,32 @@ export default function TarefasApi() {
         dataInicial={dataPreta}
         clienteInicial={clientePreta}
         onCriar={async (dados) => {
+          // A fila de anexos não vai no JSON da criação: sobe depois, no endpoint
+          // multipart de tarefa já existente (correção 5, Fase 4 do plano).
+          const { anexos, ...tarefa } = dados;
           try {
-            const nova = await criarTarefa(dados);
+            const nova = await criarTarefa(tarefa);
             setDialogNova(false);
             if (dados.responsavelId) {
               // Nasceu encaminhada: não é "minha tarefa", então recarrega a lista.
               toast.success("Tarefa criada e encaminhada para o responsável.");
               await carregar(busca);
-              return;
+            } else {
+              setTarefas((atual) => [...atual, nova].sort(
+                (a, b) => a.dataVencimento.localeCompare(b.dataVencimento),
+              ));
+              toast.success("Tarefa criada");
             }
-            setTarefas((atual) => [...atual, nova].sort(
-              (a, b) => a.dataVencimento.localeCompare(b.dataVencimento),
-            ));
-            toast.success("Tarefa criada");
+            if (anexos?.length) {
+              try {
+                await anexarArquivosTarefa(nova.id, anexos);
+              } catch (erroAnexo) {
+                // A tarefa JÁ existe: não desfaz — só explica (dá pra anexar no detalhe).
+                toast.error(
+                  `Tarefa criada, mas os anexos não puderam ser anexados: ${mensagemDeErro(erroAnexo)}`,
+                );
+              }
+            }
           } catch (erro) {
             const campos = erro instanceof ErroApi && erro.campos.length > 0 ? erro.campos : null;
             toast.error(campos ? `${campos[0].nome}: ${campos[0].mensagem}` : mensagemDeErro(erro));
@@ -720,8 +867,16 @@ function VisaoKanban({
                                 {tarefa.prioridade}
                               </span>
                             )}
-                            <span className="text-[10px] text-muted-foreground">
-                              {dataBr(tarefa.dataVencimento)}
+                            <span
+                              className="text-[10px] text-muted-foreground"
+                              title={
+                                tarefa.prazoFatal
+                                  ? `Vencimento em ${dataBr(tarefa.dataVencimento)}`
+                                  : undefined
+                              }
+                            >
+                              {/* Mesma medida das colunas (regra única de atraso, D6) */}
+                              {dataBr(prazoDaTarefa(tarefa))}
                             </span>
                           </div>
                         </div>
@@ -746,17 +901,33 @@ function DetalheTarefa({
   onFechar: () => void;
   onSalvar: (
     tarefa: Tarefa,
-    campos: { dataVencimento?: string; prioridade?: string; concluida?: boolean },
+    campos: {
+      dataVencimento?: string;
+      prazoFatal?: string;
+      prioridade?: string;
+      concluida?: boolean;
+    },
   ) => void;
   nomeUsuario: string;
   /** Chamado depois do encaminhar (a lista de fundo recarrega a linha). */
   onAtualizada?: (tarefa: Tarefa) => void;
 }) {
   const [vencimento, setVencimento] = useState("");
+  /**
+   * Prazo fatal editável (V21, pedido 22/10/2026): o PATCH já grava — o vencimento
+   * continua somente leitura (decisão 16/10). Campo em branco é OMITIDO do PATCH,
+   * porque a API trata nulo como "não muda" (remoção entra numa próxima etapa).
+   */
+  const [prazoFatal, setPrazoFatal] = useState("");
   /** Select Normal/Alta/Urgente — texto antigo fora do catálogo cai em "normal". */
   const [prioridade, setPrioridade] = useState("normal");
   /** Status: aberta x concluída (o OK antigo da lista virou este campo). */
   const [concluida, setConcluida] = useState(false);
+  /** Anexos da tarefa (V21): lista ao abrir o detalhe e após cada envio. */
+  const [anexos, setAnexos] = useState<TarefaAnexo[]>([]);
+  const [carregandoAnexos, setCarregandoAnexos] = useState(false);
+  /** Sem permissão (gate da API) ou rede: aviso local em vez de toast no detalhe. */
+  const [erroAnexos, setErroAnexos] = useState(false);
   /**
    * Última movimentação (19/10/2026): o recado da linha mais recente da trilha.
    * Sem trilha (ou sem recado nela) o campo mostra a descrição do CONTRATO — a
@@ -818,23 +989,67 @@ function DetalheTarefa({
   useEffect(() => {
     if (tarefa) {
       setVencimento(tarefa.dataVencimento);
+      setPrazoFatal(tarefa.prazoFatal ?? "");
       setPrioridade(prioridadeValida(tarefa.prioridade));
       setConcluida(tarefa.concluida);
     }
   }, [tarefa]);
 
+  // Anexos da tarefa (V21): 1 busca por abertura do detalhe; falha (gate da API ou
+  // rede) vira aviso local — o resto do detalhe continua útil.
+  useEffect(() => {
+    if (!tarefa) {
+      setAnexos([]);
+      setErroAnexos(false);
+      return;
+    }
+    let vivo = true;
+    setCarregandoAnexos(true);
+    setErroAnexos(false);
+    listarArquivosTarefa(tarefa.id)
+      .then((lista) => {
+        if (vivo) setAnexos(lista);
+      })
+      .catch(() => {
+        if (vivo) {
+          setAnexos([]);
+          setErroAnexos(true);
+        }
+      })
+      .finally(() => {
+        if (vivo) setCarregandoAnexos(false);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [tarefa]);
+
+  /** Enviar anexos novos: a API devolve a lista atualizada (pendurada na linha `criada`). */
+  const anexar = async (lista: File[]) => {
+    if (!tarefa || lista.length === 0) return;
+    try {
+      setAnexos(await anexarArquivosTarefa(tarefa.id, lista));
+      toast.success(lista.length === 1 ? "Anexo enviado." : `${lista.length} anexos enviados.`);
+    } catch (erro) {
+      toast.error(mensagemDeErro(erro));
+    }
+  };
+
   if (!tarefa) return null;
 
+  // Regra única de atraso (D6): prazo fatal ?? vencimento — igual à tabela e ao kanban.
+  const prazo = prazoDaTarefa(tarefa);
   const status = tarefa.concluida
     ? "Concluída"
-    : tarefa.dataVencimento < HOJE
+    : prazo < HOJE
     ? "Atrasada"
-    : tarefa.dataVencimento === HOJE
+    : prazo === HOJE
     ? "Vence hoje"
     : "Pendente";
 
   const mudou =
     vencimento !== tarefa.dataVencimento ||
+    prazoFatal !== (tarefa.prazoFatal ?? "") ||
     prioridade !== prioridadeValida(tarefa.prioridade) ||
     concluida !== tarefa.concluida;
 
@@ -871,7 +1086,7 @@ function DetalheTarefa({
                   variant={
                     tarefa.concluida
                       ? "outline"
-                      : tarefa.dataVencimento < HOJE
+                      : prazo < HOJE
                       ? "destructive"
                       : "secondary"
                   }
@@ -885,6 +1100,20 @@ function DetalheTarefa({
                 <p className="font-medium flex items-center gap-1 mt-1">
                   <User className="w-3 h-3" /> {nomeUsuario || "Você"}
                 </p>
+              </div>
+            </div>
+
+            {/* V21 (22/10/2026): tipo e recorrência são novos na tarefa — o cliente já
+                aparece no cabeçalho, ao lado do nome. Só leitura por ora: mexer nesses
+                campos é etapa seguinte (o prazo fatal logo abaixo já tem PATCH). */}
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <p className="text-muted-foreground">Tipo</p>
+                <p className="font-medium mt-1">{tarefa.tipoNome ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Recorrência</p>
+                <p className="font-medium mt-1">{recorrenciaRotulo(tarefa.recorrencia)}</p>
               </div>
             </div>
 
@@ -925,6 +1154,22 @@ function DetalheTarefa({
                 />
               </div>
               <div className="space-y-1.5">
+                <Label htmlFor="tarefa-prazo-fatal">Prazo fatal</Label>
+                {/* Editável (V21): o PATCH grava a troca; vazio é omitido (a API trata
+                    nulo como "não muda") — ver o aviso embaixo quando já existe prazo. */}
+                <Input
+                  id="tarefa-prazo-fatal"
+                  type="date"
+                  value={prazoFatal}
+                  onChange={(evento) => setPrazoFatal(evento.target.value)}
+                />
+                {tarefa.prazoFatal && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Deixar em branco mantém o prazo atual — removê-lo ainda não é aceito pela API.
+                  </p>
+                )}
+              </div>
+              <div className="space-y-1.5">
                 <Label htmlFor="tarefa-prioridade">Prioridade</Label>
                 <Select value={prioridade} disabled>
                   <SelectTrigger id="tarefa-prioridade">
@@ -946,6 +1191,8 @@ function DetalheTarefa({
                   onClick={() =>
                     onSalvar(tarefa, {
                       dataVencimento: vencimento,
+                      // Vazio = omitido no PATCH (a API trata nulo como "não muda").
+                      prazoFatal: prazoFatal || undefined,
                       prioridade,
                       concluida,
                     })
@@ -961,6 +1208,63 @@ function DetalheTarefa({
                 <p className="text-xs text-muted-foreground mb-1 font-medium">Descrição</p>
                 <p className="text-sm text-foreground whitespace-pre-wrap">{tarefa.descricao}</p>
               </div>
+            )}
+          </div>
+
+          {/* Anexos da tarefa (V21, 22/10/2026): a lista vem de GET /tarefas/{id}/arquivos
+              ao abrir o detalhe; subir arquivo novo usa o multipart do mesmo caminho —
+              pendurado na linha `criada`, com o gate (responsável/admin/ceo) na API. */}
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground font-medium">Anexos</p>
+            {carregandoAnexos ? (
+              <p className="text-xs text-muted-foreground">Carregando anexos...</p>
+            ) : erroAnexos ? (
+              <p className="text-xs text-muted-foreground">
+                Não foi possível carregar os anexos (sem permissão ou sem conexão).
+              </p>
+            ) : anexos.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Sem anexos.</p>
+            ) : (
+              <ul className="space-y-1">
+                {anexos.map((anexo) => (
+                  <li key={anexo.id}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        baixarAnexoTarefa(anexo.id, anexo.nomeOriginal).catch((erro) =>
+                          toast.error(mensagemDeErro(erro)),
+                        )
+                      }
+                      className="text-[11px] text-accent hover:underline inline-flex items-center gap-1"
+                    >
+                      <Paperclip className="w-3 h-3" />
+                      {anexo.nomeOriginal}
+                      {anexo.tamanhoBytes ? ` (${formatarTamanho(anexo.tamanhoBytes)})` : ""}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {tarefa.concluida ? (
+              <p className="text-[11px] text-muted-foreground">
+                Tarefa concluída não aceita novos anexos — a API responde 400.
+              </p>
+            ) : (
+              <>
+                <Label htmlFor="tarefa-anexos" className="text-xs text-muted-foreground">
+                  Anexar arquivos (PDF, imagem, vídeo, áudio etc.)
+                </Label>
+                <input
+                  id="tarefa-anexos"
+                  type="file"
+                  multiple
+                  onChange={(evento) => {
+                    void anexar(Array.from(evento.target.files ?? []));
+                    evento.target.value = "";
+                  }}
+                  className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border file:border-input file:bg-secondary file:px-3 file:py-1.5 file:text-xs file:font-medium hover:file:bg-secondary/80"
+                />
+              </>
             )}
           </div>
 
@@ -1011,24 +1315,30 @@ function DialogNovaTarefa({
 }: {
   aberto: boolean;
   onFechar: () => void;
-  onCriar: (dados: {
-    titulo: string;
-    descricao?: string;
-    dataVencimento: string;
-    prioridade?: string;
-    nomeCliente?: string;
-    /** Encaminhamento na criação: setor e pessoa que recebe (ausente = é minha). */
-    setorId?: string | null;
-    responsavelId?: string | null;
-  }) => Promise<void>;
+  /** O form monta a tarefa; a fila de anexos sobe no pai, depois da criação. */
+  onCriar: (dados: TarefaNova & { anexos?: File[] }) => Promise<void>;
   /** Vencimento ja preenchido quando a tarefa nasce pelo calendario. */
   dataInicial?: string | null;
   /** Cliente ja escolhido quando a tarefa nasce pela lista de Clientes. */
   clienteInicial?: ClienteEscolhido | null;
 }) {
-  const [titulo, setTitulo] = useState("");
+  /**
+   * Tipo escolhido (obrigatório, pedido do titular 22/10): o NOME do tipo vira o
+   * TÍTULO gravado da tarefa — por isso o campo de título digitável saiu do form.
+   */
+  const [tipoId, setTipoId] = useState("");
+  const [tipos, setTipos] = useState<TarefaTipo[]>([]);
+  const [carregandoTipos, setCarregandoTipos] = useState(true);
+  /** Processo (opcional): por ora um UUID digitado — a lista vem do cliente no futuro. */
+  const [processo, setProcesso] = useState("");
   const [descricao, setDescricao] = useState("");
   const [vencimento, setVencimento] = useState(HOJE);
+  /** Data fatal (opcional, V21): o último prazo do designado. */
+  const [prazoFatal, setPrazoFatal] = useState("");
+  /** Recorrência (V21): Única (padrão), Diária, Semanal ou Mensal. */
+  const [recorrencia, setRecorrencia] = useState("unica");
+  /** Fila de anexos: escolhidos aqui, subam depois que a tarefa existir (multipart). */
+  const [arquivos, setArquivos] = useState<File[]>([]);
   /** Prioridade é SELECT Normal/Alta/Urgente (pedido do titular 16/10/2026). */
   const [prioridade, setPrioridade] = useState("normal");
   const [cliente, setCliente] = useState<ClienteEscolhido | null>(null);
@@ -1042,6 +1352,17 @@ function DialogNovaTarefa({
   const [responsavelId, setResponsavelId] = useState("");
   const [setores, setSetores] = useState<Setor[]>([]);
   const [membros, setMembros] = useState<Membro[]>([]);
+
+  // Tipos do seletor: buscados A CADA abertura (cadastro feito em outra aba aparece na
+  // hora); leitura aberta a qualquer autenticado, igual às listas de baixo.
+  useEffect(() => {
+    if (!aberto) return;
+    setCarregandoTipos(true);
+    listarTiposTarefa()
+      .then((lista) => setTipos(lista.filter((tipo) => tipo.ativo)))
+      .catch(() => setTipos([]))
+      .finally(() => setCarregandoTipos(false));
+  }, [aberto]);
 
   // Listas do encaminhamento carregam uma vez (leitura aberta a qualquer autenticado).
   useEffect(() => {
@@ -1069,13 +1390,24 @@ function DialogNovaTarefa({
       setEhMinha(true);
       setSetorId("");
       setResponsavelId("");
+      // Campos novos do pedido 22/10: renascem limpos a cada abertura — o Cancelar
+      // fecha sem passar pelo limpar do onOpenChange.
+      setTipoId("");
+      setProcesso("");
+      setPrazoFatal("");
+      setRecorrencia("unica");
+      setArquivos([]);
     }
   }, [aberto, dataInicial, clienteInicial]);
 
   const limpar = () => {
-    setTitulo("");
+    setTipoId("");
+    setProcesso("");
     setDescricao("");
     setVencimento(HOJE);
+    setPrazoFatal("");
+    setRecorrencia("unica");
+    setArquivos([]);
     setPrioridade("normal");
     setCliente(null);
     setEhMinha(true);
@@ -1085,8 +1417,24 @@ function DialogNovaTarefa({
 
   const enviar = async (evento: React.FormEvent) => {
     evento.preventDefault();
-    if (!titulo.trim()) {
-      toast.error("Informe o título da tarefa");
+    const tipoEscolhido = tipos.find((tipo) => tipo.id === tipoId);
+    if (!tipoEscolhido) {
+      toast.error(
+        tipos.length === 0
+          ? "Nenhum tipo cadastrado — cadastre em Cadastro > Tipos de tarefa."
+          : "Escolha o tipo da tarefa",
+      );
+      return;
+    }
+    if (!vencimento) {
+      toast.error("Informe a data de vencimento");
+      return;
+    }
+    const processoLimpo = processo.trim();
+    if (processoLimpo && !EH_UUID.test(processoLimpo)) {
+      toast.error(
+        "Processo: informe o identificador (UUID) — em breve os processos vêm do cliente.",
+      );
       return;
     }
     if (!ehMinha && !setorId) {
@@ -1100,13 +1448,21 @@ function DialogNovaTarefa({
     setSalvando(true);
     try {
       await onCriar({
-        titulo: titulo.trim(),
+        // O título do DTO continua obrigatório na API: mando o nome do tipo, que é o
+        // que a API grava de verdade quando `tipoId` vem preenchido.
+        titulo: tipoEscolhido.nome,
+        tipoId: tipoEscolhido.id,
         descricao: descricao.trim() || undefined,
         dataVencimento: vencimento,
-        prioridade,
+        prazoFatal: prazoFatal || undefined,
+        recorrencia,
+        processoId: processoLimpo || undefined,
+        clienteId: cliente?.id || undefined,
         nomeCliente: cliente?.nome.trim() || undefined,
+        prioridade,
         setorId: ehMinha ? undefined : setorId,
         responsavelId: ehMinha ? undefined : responsavelId,
+        anexos: arquivos.length > 0 ? arquivos : undefined,
       });
       limpar();
     } finally {
@@ -1129,32 +1485,62 @@ function DialogNovaTarefa({
         <DialogHeader>
           <DialogTitle>Nova tarefa</DialogTitle>
           <DialogDescription>
-            Por padrão a tarefa fica com você. Desmarque "É minha tarefa" para criar e já
-            encaminhar para o setor e a pessoa que vão receber.
+            O título da tarefa é o nome do TIPO escolhido. Por padrão ela fica com você —
+            desmarque "É minha tarefa" para criar e já encaminhar para o setor e a pessoa
+            que vão receber.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={enviar} className="space-y-4">
+          {/* 1º CLIENTE (pedido do titular 22/10): o id vai para a API — sem ele não há
+              como buscar os processos do cliente no futuro (D1 do plano). */}
           <div className="space-y-1.5">
-            <Label htmlFor="nova-titulo">Título *</Label>
+            <Label htmlFor="nova-cliente">Cliente (opcional)</Label>
+            {/* key muda ao abrir: o component renasce e aplica o prefill recebido */}
+            <ClienteBusca
+              key={aberto ? `ab-${clienteInicial?.id ?? clienteInicial?.nome ?? "novo"}` : "fechado"}
+              id="nova-cliente"
+              inicial={clienteInicial}
+              onChange={setCliente}
+            />
+          </div>
+
+          {/* 2º PROCESSO (opcional): hoje é um UUID digitado; a lista filtrada pelo
+              cliente escolhido entra com o módulo de processos (V5/V7 adiaram a tabela). */}
+          <div className="space-y-1.5">
+            <Label htmlFor="nova-processo">Processo (opcional)</Label>
             <Input
-              id="nova-titulo"
-              value={titulo}
-              onChange={(evento) => setTitulo(evento.target.value)}
-              placeholder="Ex.: ONBOARDING — João da Silva"
-              maxLength={300}
-              autoFocus
+              id="nova-processo"
+              value={processo}
+              onChange={(evento) => setProcesso(evento.target.value)}
+              placeholder="Identificador (UUID) do processo — em breve vem do cliente"
+              maxLength={64}
             />
           </div>
+
+          {/* 3º TIPO (obrigatório): o nome do tipo vira o TÍTULO gravado da API —
+              por isso o campo de título digitável saiu do form (pedido do titular). */}
           <div className="space-y-1.5">
-            <Label htmlFor="nova-descricao">Descrição</Label>
-            <Textarea
-              id="nova-descricao"
-              value={descricao}
-              onChange={(evento) => setDescricao(evento.target.value)}
-              rows={3}
-              maxLength={4000}
-            />
+            <Label htmlFor="nova-tipo">Tipo de tarefa *</Label>
+            <Select value={tipoId} onValueChange={setTipoId}>
+              <SelectTrigger id="nova-tipo">
+                <SelectValue placeholder="Selecione o tipo" />
+              </SelectTrigger>
+              <SelectContent>
+                {tipos.map((tipo) => (
+                  <SelectItem key={tipo.id} value={tipo.id}>
+                    {tipo.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!carregandoTipos && tipos.length === 0 && (
+              <p className="text-[11px] text-warning">
+                Nenhum tipo cadastrado — cadastre em Cadastro &gt; Tipos de tarefa.
+              </p>
+            )}
           </div>
+
+          {/* 4º DATAS: vencimento obrigatório (como sempre) + data fatal (V21, novo) */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="nova-vencimento">Vencimento *</Label>
@@ -1166,30 +1552,108 @@ function DialogNovaTarefa({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="nova-prioridade">Prioridade</Label>
-              <Select value={prioridade} onValueChange={setPrioridade}>
-                <SelectTrigger id="nova-prioridade">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PRIORIDADES.map((item) => (
-                    <SelectItem key={item.valor} value={item.valor}>
-                      {item.rotulo}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="nova-prazo-fatal">Data fatal (opcional)</Label>
+              <Input
+                id="nova-prazo-fatal"
+                type="date"
+                value={prazoFatal}
+                onChange={(evento) => setPrazoFatal(evento.target.value)}
+              />
             </div>
           </div>
+
+          {/* 5º RECORRÊNCIA (V21): gravar agora; gerar as instâncias futuras é etapa
+              posterior (D3 do plano). */}
           <div className="space-y-1.5">
-            <Label htmlFor="nova-cliente">Cliente (opcional)</Label>
-            {/* key muda ao abrir: o component renasce e aplica o prefill recebido */}
-            <ClienteBusca
-              key={aberto ? `ab-${clienteInicial?.id ?? clienteInicial?.nome ?? "novo"}` : "fechado"}
-              id="nova-cliente"
-              inicial={clienteInicial}
-              onChange={setCliente}
+            <Label htmlFor="nova-recorrencia">Recorrência</Label>
+            <Select value={recorrencia} onValueChange={setRecorrencia}>
+              <SelectTrigger id="nova-recorrencia">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RECORRENCIAS.map((item) => (
+                  <SelectItem key={item.valor} value={item.valor}>
+                    {item.rotulo}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* 6º ANEXOS: fila escolhida aqui, sobe DEPOIS da criação (a criação é JSON
+              puro; o multipart é o /tarefas/{id}/arquivos) — ver o onCriar do pai. */}
+          <div className="space-y-1.5">
+            <Label htmlFor="nova-anexos">Anexos (opcional)</Label>
+            <input
+              id="nova-anexos"
+              type="file"
+              multiple
+              onChange={(evento) => {
+                const novos = Array.from(evento.target.files ?? []);
+                setArquivos((atual) => [...atual, ...novos]);
+                evento.target.value = "";
+              }}
+              className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border file:border-input file:bg-secondary file:px-3 file:py-1.5 file:text-xs file:font-medium hover:file:bg-secondary/80"
             />
+            {arquivos.length > 0 && (
+              <ul className="space-y-1">
+                {arquivos.map((arquivo, indice) => (
+                  <li
+                    key={`${arquivo.name}-${indice}`}
+                    className="flex items-center justify-between gap-2 rounded-md bg-secondary/60 px-2 py-1 text-xs"
+                  >
+                    <span className="truncate inline-flex items-center gap-1.5">
+                      <Paperclip className="w-3 h-3 shrink-0" />
+                      {arquivo.name}
+                      <span className="text-muted-foreground">({formatarTamanho(arquivo.size)})</span>
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Remover ${arquivo.name}`}
+                      onClick={() =>
+                        setArquivos((atual) => atual.filter((_, posicao) => posicao !== indice))
+                      }
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Os arquivos sobem depois que a tarefa for criada — se falhar, o aviso explica
+              (a tarefa já estará gravada).
+            </p>
+          </div>
+
+          {/* 7º DESCRIÇÃO */}
+          <div className="space-y-1.5">
+            <Label htmlFor="nova-descricao">Descrição</Label>
+            <Textarea
+              id="nova-descricao"
+              value={descricao}
+              onChange={(evento) => setDescricao(evento.target.value)}
+              rows={3}
+              maxLength={4000}
+            />
+          </div>
+
+          {/* 8º PRIORIDADE */}
+          <div className="space-y-1.5">
+            <Label htmlFor="nova-prioridade">Prioridade</Label>
+            <Select value={prioridade} onValueChange={setPrioridade}>
+              <SelectTrigger id="nova-prioridade">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PRIORIDADES.map((item) => (
+                  <SelectItem key={item.valor} value={item.valor}>
+                    {item.rotulo}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* É minha (padrão) x encaminhar na criação: setor + pessoa que recebe */}

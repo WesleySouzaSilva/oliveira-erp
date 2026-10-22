@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -232,20 +233,17 @@ export function EmpresaDocumentosSection({ empresaId }: { empresaId: string }) {
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label>Arquivo (PDF, Word ou imagem — até 20MB)</Label>
-              <Input
-                type="file"
+              {/* Anexar por clique OU arrastar (OE-13); a fila mostra nome e tamanho. */}
+              <CaixaAnexo
+                multiple={false}
                 accept={ACCEPT}
-                onChange={(e) => {
-                  const f = e.target.files?.[0] || null;
-                  setFile(f);
-                  if (f && !titulo) setTitulo(f.name.replace(/\.[^.]+$/, ""));
+                arquivos={file ? [file] : []}
+                onArquivosChange={(lista) => {
+                  const escolhido = lista[lista.length - 1] || null;
+                  setFile(escolhido);
+                  if (escolhido && !titulo) setTitulo(escolhido.name.replace(/\.[^.]+$/, ""));
                 }}
               />
-              {file && (
-                <p className="text-xs text-muted-foreground">
-                  {file.name} · {fmtSize(file.size)}
-                </p>
-              )}
             </div>
             <div className="space-y-1.5">
               <Label>Título *</Label>

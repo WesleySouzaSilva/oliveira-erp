@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { TarefaTimeline } from "@/components/erp/TarefaMovimentacao";
+import { EncaminharTarefa, TarefaTimeline } from "@/components/erp/TarefaMovimentacao";
 import { baixarArquivoContrato, listarArquivos } from "@/lib/api/contratos";
 import { baixarAnexoTarefa } from "@/lib/api/tarefas";
 
@@ -102,5 +102,31 @@ describe("TarefaTimeline — anexos do contrato na linha criada", () => {
     await screen.findByRole("button", { name: /contrato-do-cliente\.pdf/ });
     // veio do cache de módulo — nenhuma chamada nova
     expect(vi.mocked(listarArquivos)).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe("EncaminharTarefa — anexos por clique OU arrastar (OE-13)", () => {
+  it("soltar e clicar adicionam na fila de anexos; o X remove", async () => {
+    render(<EncaminharTarefa tarefa={{ id: "tarefa-1" } as never} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Responder ou encaminhar tarefa" }));
+
+    const area = document.querySelector("[data-caixa-anexo]") as HTMLElement;
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(area).toBeTruthy();
+
+    // arrastar
+    fireEvent.drop(area, { dataTransfer: { files: [new File(["x"], "recibo.pdf")] } });
+    expect(await screen.findByText("recibo.pdf")).toBeInTheDocument();
+
+    // clicar (mesmo caminho do seletor)
+    fireEvent.change(input, { target: { files: [new File(["y"], "foto.png")] } });
+    expect(await screen.findByText("foto.png")).toBeInTheDocument();
+
+    // remover um não derruba o outro
+    fireEvent.click(screen.getByRole("button", { name: "Remover recibo.pdf" }));
+    await waitFor(() => expect(screen.queryByText("recibo.pdf")).toBeNull());
+    expect(screen.getByText("foto.png")).toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight, CornerUpRight, Loader2, Paperclip, Send, X } from "lucide-react";
+import { ChevronDown, ChevronRight, CornerUpRight, Loader2, Paperclip, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ErroApi, mensagemDeErro } from "@/lib/api/http";
 import {
@@ -14,6 +14,7 @@ import { listarSetores, type Setor } from "@/lib/api/setores";
 import { listarMembros, type Membro } from "@/lib/api/membros";
 import { baixarArquivoContrato, listarArquivos, type Arquivo } from "@/lib/api/contratos";
 import { formatarTamanho } from "@/lib/formatarTamanho";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 
 /**
  * Movimentação da tarefa, dentro do drawer de detalhe:
@@ -385,46 +386,16 @@ export function EncaminharTarefa({
           </div>
 
           <div className="space-y-1">
-            <label className="text-[11px] text-muted-foreground" htmlFor="encaminhar-anexos">
+            <p className="text-[11px] text-muted-foreground">
               Anexos — fotos, documentos, vídeos, áudios etc. (qualquer arquivo; os bytes vão para o diretório de uploads configurado na API)
-            </label>
-            <input
-              id="encaminhar-anexos"
-              type="file"
-              multiple
-              onChange={(evento) => {
-                const novos = Array.from(evento.target.files ?? []);
-                setArquivos((atual) => [...atual, ...novos]);
-                evento.target.value = "";
-              }}
-              className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border file:border-input file:bg-secondary file:px-3 file:py-1.5 file:text-xs file:font-medium hover:file:bg-secondary/80"
+            </p>
+            <CaixaAnexo
+              arquivos={arquivos}
+              onAdicionar={(novos) => setArquivos((atual) => [...atual, ...novos])}
+              onRemover={(indice) =>
+                setArquivos((atual) => atual.filter((_, posicao) => posicao !== indice))
+              }
             />
-            {arquivos.length > 0 && (
-              <ul className="space-y-1">
-                {arquivos.map((arquivo, indice) => (
-                  <li
-                    key={`${arquivo.name}-${indice}`}
-                    className="flex items-center justify-between gap-2 rounded-md bg-secondary/60 px-2 py-1 text-xs"
-                  >
-                    <span className="truncate inline-flex items-center gap-1.5">
-                      <Paperclip className="w-3 h-3 shrink-0" />
-                      {arquivo.name}
-                      <span className="text-muted-foreground">({formatarTamanho(arquivo.size)})</span>
-                    </span>
-                    <button
-                      type="button"
-                      aria-label={`Remover ${arquivo.name}`}
-                      onClick={() =>
-                        setArquivos((atual) => atual.filter((_, posicao) => posicao !== indice))
-                      }
-                      className="text-muted-foreground hover:text-destructive"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
 
           <div className="flex justify-end gap-2">

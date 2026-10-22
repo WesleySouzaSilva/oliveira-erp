@@ -1,10 +1,11 @@
 import { ordenarSetores } from "@/lib/treinamentos";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrgMembers } from "@/hooks/useOrgMembers";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -88,11 +89,9 @@ export default function NovoEnvioTab() {
   // null = ainda não lido; "nao_verificado" = Word ilegível
   const [marcadores, setMarcadores] = useState<string[] | null | "nao_verificado">(null);
   const [signatarios, setSignatarios] = useState<Sign[]>([signVazio("cliente")]);
-  const [arrastando, setArrastando] = useState(false);
   const [revisando, setRevisando] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [configurado, setConfigurado] = useState<boolean | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const unico = TIPOS_SIGNATARIO_UNICO.includes(tipo);
 
@@ -341,34 +340,33 @@ export default function NovoEnvioTab() {
       {/* Arquivo */}
       <div className="space-y-2">
         <Label>Arquivo (PDF ou Word .docx, até 10 MB)</Label>
-        <div
-          onDragOver={(e) => { e.preventDefault(); setArrastando(true); }}
-          onDragLeave={() => setArrastando(false)}
-          onDrop={(e) => { e.preventDefault(); setArrastando(false); aoEscolherArquivo(e.dataTransfer.files?.[0] || null); }}
-          className={`rounded-lg border-2 border-dashed p-6 text-center transition-colors ${arrastando ? "border-primary bg-primary/5" : "border-border bg-card"}`}
-        >
-          <FileUp className="w-6 h-6 mx-auto text-muted-foreground mb-2" />
-          {arquivo ? (
-            <p className="text-sm font-medium">{arquivo.name} <span className="text-muted-foreground">({(arquivo.size / 1024 / 1024).toFixed(2)} MB)</span></p>
-          ) : drivePath ? (
-            <p className="text-sm font-medium">Do drive: {drivePath.split("/").pop()}</p>
-          ) : (
-            <p className="text-sm text-muted-foreground">Arraste e solte o arquivo aqui</p>
-          )}
-          <div className="mt-3 flex flex-wrap justify-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>Escolher arquivo</Button>
-            {(arquivo || drivePath) && (
-              <Button variant="ghost" size="sm" onClick={() => { setArquivo(null); setDrivePath(""); setMarcadores(null); }}>
-                <X className="w-4 h-4 mr-1" /> Remover
-              </Button>
-            )}
-          </div>
-          <input
-            ref={fileRef} type="file" className="hidden"
-            accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
-            onChange={(e) => { aoEscolherArquivo(e.target.files?.[0] || null); e.target.value = ""; }}
-          />
-        </div>
+        {/* Escolher o arquivo por clique OU arrastando até aqui (OE-13). */}
+        <CaixaAnexo
+          icone={false}
+          multiple={false}
+          arquivos={arquivo ? [arquivo] : []}
+          accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
+          onAdicionar={(novos) => novos[0] && aoEscolherArquivo(novos[0])}
+          rotulo={
+            <>
+              <FileUp className="w-6 h-6 mx-auto text-muted-foreground mb-2" />
+              {arquivo ? (
+                <p className="text-sm font-medium">{arquivo.name} <span className="text-muted-foreground">({(arquivo.size / 1024 / 1024).toFixed(2)} MB)</span></p>
+              ) : drivePath ? (
+                <p className="text-sm font-medium">Do drive: {drivePath.split("/").pop()}</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">Arraste e solte o arquivo aqui ou clique para selecionar</p>
+              )}
+              {(arquivo || drivePath) && (
+                <div className="mt-3">
+                  <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setArquivo(null); setDrivePath(""); setMarcadores(null); }}>
+                    <X className="w-4 h-4 mr-1" /> Remover
+                  </Button>
+                </div>
+              )}
+            </>
+          }
+        />
         {clienteDoc && driveFiles.length > 0 && (
           <Select value={drivePath} onValueChange={aoEscolherDrive}>
             <SelectTrigger className="w-full sm:w-[360px]"><HardDrive className="w-4 h-4 mr-1" /><SelectValue placeholder="Ou escolha do drive do cliente" /></SelectTrigger>

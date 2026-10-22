@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Brain, Trash2, Loader2, Upload } from "lucide-react";
+import { Brain, Trash2, Loader2 } from "lucide-react";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 
 const CATEGORIAS = [
@@ -136,10 +137,7 @@ export default function OliviaConhecimento() {
     });
   }
 
-  async function onUploadArquivo(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
+  async function onUploadArquivo(file: File) {
     const nome = file.name.toLowerCase();
     const isPdf = file.type === "application/pdf" || nome.endsWith(".pdf");
     const isDocx = file.type.includes("wordprocessingml") || nome.endsWith(".docx");
@@ -254,17 +252,17 @@ export default function OliviaConhecimento() {
         />
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <label className="inline-flex items-center gap-2 h-9 px-3 rounded-md border cursor-pointer text-sm hover:bg-accent/40 transition-colors">
-              {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-              <span>{uploading ? "Processando…" : "Enviar arquivo (PDF ou DOCX)"}</span>
-              <input
-                type="file"
-                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                className="hidden"
-                disabled={uploading}
-                onChange={onUploadArquivo}
-              />
-            </label>
+            <CaixaAnexo
+              multiple={false}
+              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              desabilitado={uploading}
+              onAdicionar={(novos) => novos[0] && onUploadArquivo(novos[0])}
+              rotulo={
+                <p className="text-xs font-medium text-foreground">
+                  {uploading ? "Processando…" : "Arraste o PDF ou DOCX aqui ou clique para selecionar"}
+                </p>
+              }
+            />
             {progressoUpload && <span className="text-xs text-muted-foreground">{progressoUpload}</span>}
           </div>
           <Button onClick={salvar} disabled={salvando}>

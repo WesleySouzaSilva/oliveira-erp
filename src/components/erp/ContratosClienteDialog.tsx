@@ -11,7 +11,6 @@ import {
   Pencil,
   Plus,
   Trash2,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +35,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { mensagemDeErro } from "@/lib/api/http";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { listarTiposObjeto, type TipoObjeto } from "@/lib/api/objetos";
 import {
@@ -441,50 +441,17 @@ export function ContratosClienteDialog({
                 {/* Anexos junto da descrição (19/10/2026) — mesmo jeito do encaminhar
                     da tarefa: escolhe os arquivos e eles vão no salvar. */}
                 <div className="space-y-1 pt-1.5">
-                  <label
-                    className="block text-[11px] text-muted-foreground"
-                    htmlFor="contrato-anexos"
-                  >
+                  <p className="block text-[11px] text-muted-foreground">
                     Anexar documentos — fotos, PDFs, planilhas etc. (os arquivos vão junto do
                     contrato no salvar)
-                  </label>
-                  <input
-                    id="contrato-anexos"
-                    type="file"
-                    multiple
-                    onChange={(evento) => {
-                      const novos = Array.from(evento.target.files ?? []);
-                      setArquivos((atual) => [...atual, ...novos]);
-                      evento.target.value = "";
-                    }}
-                    className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border file:border-input file:bg-secondary file:px-3 file:py-1.5 file:text-xs file:font-medium hover:file:bg-secondary/80"
+                  </p>
+                  <CaixaAnexo
+                    arquivos={arquivos}
+                    onAdicionar={(novos) => setArquivos((atual) => [...atual, ...novos])}
+                    onRemover={(indice) =>
+                      setArquivos((atual) => atual.filter((_, posicao) => posicao !== indice))
+                    }
                   />
-                  {arquivos.length > 0 && (
-                    <ul className="space-y-1">
-                      {arquivos.map((arquivo, indice) => (
-                        <li
-                          key={`${arquivo.name}-${indice}`}
-                          className="flex items-center justify-between gap-2 rounded-md bg-secondary/60 px-2 py-1 text-xs"
-                        >
-                          <span className="truncate inline-flex items-center gap-1.5">
-                            <Paperclip className="w-3 h-3 shrink-0" />
-                            {arquivo.name}
-                            <span className="text-muted-foreground">({formatarTamanho(arquivo.size)})</span>
-                          </span>
-                          <button
-                            type="button"
-                            aria-label={`Remover ${arquivo.name}`}
-                            onClick={() =>
-                              setArquivos((atual) => atual.filter((_, posicao) => posicao !== indice))
-                            }
-                            className="text-muted-foreground hover:text-destructive"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                 </div>
                 {/* Anexos JÁ GRAVADOS (só na edição — correção 1): baixam e excluem os que
                     já estão no contrato; a fila de cima continua sendo só dos novos. */}

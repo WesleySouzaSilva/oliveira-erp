@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -1251,18 +1252,15 @@ function DetalheTarefa({
               </p>
             ) : (
               <>
-                <Label htmlFor="tarefa-anexos" className="text-xs text-muted-foreground">
-                  Anexar arquivos (PDF, imagem, vídeo, áudio etc.)
-                </Label>
-                <input
-                  id="tarefa-anexos"
-                  type="file"
-                  multiple
-                  onChange={(evento) => {
-                    void anexar(Array.from(evento.target.files ?? []));
-                    evento.target.value = "";
-                  }}
-                  className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border file:border-input file:bg-secondary file:px-3 file:py-1.5 file:text-xs file:font-medium hover:file:bg-secondary/80"
+                {/* Anexar por clique OU arrastar (OE-13); o envio continua no anexar(). */}
+                <CaixaAnexo
+                  arquivos={[]}
+                  onAdicionar={(novos) => void anexar(novos)}
+                  rotulo={
+                    <p className="text-xs font-medium text-foreground">
+                      Arraste os arquivos aqui ou clique para anexar
+                    </p>
+                  }
                 />
               </>
             )}
@@ -1584,43 +1582,14 @@ function DialogNovaTarefa({
               puro; o multipart é o /tarefas/{id}/arquivos) — ver o onCriar do pai. */}
           <div className="space-y-1.5">
             <Label htmlFor="nova-anexos">Anexos (opcional)</Label>
-            <input
+            <CaixaAnexo
               id="nova-anexos"
-              type="file"
-              multiple
-              onChange={(evento) => {
-                const novos = Array.from(evento.target.files ?? []);
-                setArquivos((atual) => [...atual, ...novos]);
-                evento.target.value = "";
-              }}
-              className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border file:border-input file:bg-secondary file:px-3 file:py-1.5 file:text-xs file:font-medium hover:file:bg-secondary/80"
+              arquivos={arquivos}
+              onAdicionar={(novos) => setArquivos((atual) => [...atual, ...novos])}
+              onRemover={(indice) =>
+                setArquivos((atual) => atual.filter((_, posicao) => posicao !== indice))
+              }
             />
-            {arquivos.length > 0 && (
-              <ul className="space-y-1">
-                {arquivos.map((arquivo, indice) => (
-                  <li
-                    key={`${arquivo.name}-${indice}`}
-                    className="flex items-center justify-between gap-2 rounded-md bg-secondary/60 px-2 py-1 text-xs"
-                  >
-                    <span className="truncate inline-flex items-center gap-1.5">
-                      <Paperclip className="w-3 h-3 shrink-0" />
-                      {arquivo.name}
-                      <span className="text-muted-foreground">({formatarTamanho(arquivo.size)})</span>
-                    </span>
-                    <button
-                      type="button"
-                      aria-label={`Remover ${arquivo.name}`}
-                      onClick={() =>
-                        setArquivos((atual) => atual.filter((_, posicao) => posicao !== indice))
-                      }
-                      className="text-muted-foreground hover:text-destructive"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
             <p className="text-[11px] text-muted-foreground">
               Os arquivos sobem depois que a tarefa for criada — se falhar, o aviso explica
               (a tarefa já estará gravada).

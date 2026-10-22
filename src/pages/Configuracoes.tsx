@@ -3,7 +3,6 @@ import { useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   User,
-  Upload,
   Save,
   CheckCircle2,
   Crown,
@@ -20,6 +19,7 @@ import { IntegracoesPanel } from "@/components/IntegracoesPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AcessosEquipePanel } from "@/components/AcessosEquipePanel";
 import { usePermissions } from "@/hooks/usePermissions";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 
 const ufs = [
   "AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA",
@@ -117,9 +117,8 @@ export default function Configuracoes() {
     setSaving(false);
   };
 
-  const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
+  const handleSignatureUpload = async (file: File) => {
+    if (!user) return;
 
     const ext = file.name.split(".").pop();
     const path = `${user.id}/assinatura.${ext}`;
@@ -280,16 +279,19 @@ export default function Configuracoes() {
             </div>
           ) : null}
 
-          <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors cursor-pointer">
-            <Upload className="w-4 h-4" />
-            {profile.assinatura_url ? "Trocar assinatura" : "Enviar assinatura"}
-            <input
-              type="file"
-              accept="image/png,image/jpeg"
-              onChange={handleSignatureUpload}
-              className="hidden"
-            />
-          </label>
+          {/* Enviar por clique OU arrastar (OE-13); o upload da assinatura continua igual. */}
+          <CaixaAnexo
+            multiple={false}
+            accept="image/png,image/jpeg"
+            onAdicionar={(novos) => novos[0] && handleSignatureUpload(novos[0])}
+            rotulo={
+              <p className="text-sm font-medium text-foreground">
+                {profile.assinatura_url
+                  ? "Arraste a nova assinatura aqui ou clique para trocar"
+                  : "Arraste a assinatura aqui ou clique para enviar"}
+              </p>
+            }
+          />
         </motion.div>
 
         {/* Certificado Digital A1 */}

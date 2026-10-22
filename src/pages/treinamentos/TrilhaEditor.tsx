@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -283,9 +284,18 @@ export default function TrilhaEditor() {
                 <div className="space-y-1.5">
                   <Label htmlFor="au-arq">{aulaForm.tipo === "video_arquivo" ? "Arquivo de vídeo (até 200 MB)" : "PDF ou documento (até 20 MB)"}</Label>
                   {aulaForm.tipo === "video_arquivo" && <p className="text-xs text-muted-foreground">Sempre que possível, prefira um link do YouTube (não listado) ou Vimeo.</p>}
-                  <Input id="au-arq" type="file" disabled={enviando}
+                  {/* Anexar por clique OU arrastar (OE-13); o envio pro storage continua o mesmo. */}
+                  <CaixaAnexo
+                    multiple={false}
+                    desabilitado={enviando}
                     accept={aulaForm.tipo === "video_arquivo" ? "video/*" : ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"}
-                    onChange={(e) => e.target.files?.[0] && enviarArquivo(e.target.files[0])} />
+                    onAdicionar={(novos) => novos[0] && enviarArquivo(novos[0])}
+                    rotulo={
+                      <p className="text-xs font-medium text-foreground">
+                        {enviando ? "Enviando..." : "Arraste o arquivo aqui ou clique para selecionar"}
+                      </p>
+                    }
+                  />
                   {enviando && <p className="text-xs text-muted-foreground flex items-center gap-1"><Upload className="w-3 h-3" />Enviando...</p>}
                   {aulaForm.storage_path && !enviando && <p className="text-xs text-primary">Arquivo anexado{aulaForm.nome_arquivo ? `: ${aulaForm.nome_arquivo}` : ""}.</p>}
                 </div>

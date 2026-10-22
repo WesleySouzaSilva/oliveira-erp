@@ -233,4 +233,31 @@ describe("ContratosClienteDialog — descricao so por trás da seta", () => {
       expect.objectContaining({ contratoId: "contrato-9" }),
     );
   });
+
+
+  it("o form de contrato aceita anexos por clique OU arrastar (CaixaAnexo)", async () => {
+    abrir();
+    expect(await screen.findByText("CT-001")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Novo contrato/ }));
+    expect(await screen.findByText(/Setores de envio/)).toBeInTheDocument();
+
+    const area = document.querySelector("[data-caixa-anexo]") as HTMLElement;
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(area).toBeTruthy();
+
+    // arrastar
+    fireEvent.drop(area, { dataTransfer: { files: [new File(["x"], "contrato-fisico.pdf")] } });
+    expect(await screen.findByText("contrato-fisico.pdf")).toBeInTheDocument();
+
+    // clicar
+    fireEvent.change(input, { target: { files: [new File(["y"], "foto-obra.png")] } });
+    expect(await screen.findByText("foto-obra.png")).toBeInTheDocument();
+
+    // remover só o que foi clicado no X
+    fireEvent.click(screen.getByRole("button", { name: "Remover contrato-fisico.pdf" }));
+    await waitFor(() => expect(screen.queryByText("contrato-fisico.pdf")).toBeNull());
+    expect(screen.getByText("foto-obra.png")).toBeInTheDocument();
+  });
 });
+

@@ -3,10 +3,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, FileSearch, Upload, X, FileText, Save, FileDown, RotateCcw, Eye, Scale, Gavel, MessageSquare, Send, Sparkles, Trash2 } from "lucide-react";
+import { Loader2, FileSearch, Save, FileDown, RotateCcw, Eye, Scale, Gavel, MessageSquare, Send, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -56,12 +57,6 @@ const bacenBadge: Record<string, { label: string; cls: string }> = {
   muito_acima_media: { label: "Muito acima da média", cls: "bg-red-600 text-white" },
 };
 
-function fmtSize(n: number) {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(2)} MB`;
-}
-
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -103,7 +98,6 @@ export default function AnaliseContratos() {
   const [contexto, setContexto] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [dataPresumida, setDataPresumida] = useState("");
-  const [drag, setDrag] = useState(false);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressMsg, setProgressMsg] = useState("");
@@ -114,7 +108,6 @@ export default function AnaliseContratos() {
   const [historico, setHistorico] = useState<any[]>([]);
   const [filtroHist, setFiltroHist] = useState("");
   const [viewing, setViewing] = useState<any | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // Chat contextual
   type ChatMsg = { role: "user" | "assistant"; content: string };
@@ -630,34 +623,20 @@ export default function AnaliseContratos() {
 
             <div>
               <Label>Upload dos contratos * <span className="text-xs text-muted-foreground">(até 5 — análise comparativa automática quando &gt; 1)</span></Label>
-              <div
-                onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-                onDragLeave={() => setDrag(false)}
-                onDrop={(e) => { e.preventDefault(); setDrag(false); handleFiles(e.dataTransfer.files); }}
-                onClick={() => inputRef.current?.click()}
-                className={`mt-1 cursor-pointer rounded-lg border-2 border-dashed p-6 text-center transition-colors ${drag ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
-              >
-                <Upload className="mx-auto h-8 w-8 text-muted-foreground" />
-                <p className="mt-2 text-sm font-medium">Arraste e solte ou clique para enviar</p>
-                <p className="text-xs text-muted-foreground">PDF, DOC ou DOCX — até 20MB cada</p>
-                <input ref={inputRef} type="file" hidden multiple accept=".pdf,.doc,.docx" onChange={(e) => { handleFiles(e.target.files); if (inputRef.current) inputRef.current.value = ""; }} />
-              </div>
-              {files.length > 0 && (
-                <div className="mt-2 space-y-2">
-                  {files.map((f, i) => (
-                    <div key={i} className="flex items-center justify-between rounded-lg border p-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileText className="h-5 w-5 text-primary shrink-0" />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{i + 1}. {f.name}</p>
-                          <p className="text-xs text-muted-foreground">{fmtSize(f.size)}</p>
-                        </div>
-                      </div>
-                      <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); removerArquivo(i); }}><X className="h-4 w-4" /></Button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {/* Selecionar por clique OU arrastar (OE-13); a lista mostra nome, tamanho e o X. */}
+              <CaixaAnexo
+                arquivos={files}
+                accept=".pdf,.doc,.docx"
+                onAdicionar={(novos) => handleFiles(novos)}
+                onRemover={(indice) => removerArquivo(indice)}
+                rotulo={
+                  <>
+                    <p className="text-sm font-medium">Arraste e solte ou clique para enviar</p>
+                    <p className="text-xs text-muted-foreground">PDF, DOC ou DOCX — até 20MB cada</p>
+                  </>
+                }
+                className="mt-1"
+              />
             </div>
 
             <div>

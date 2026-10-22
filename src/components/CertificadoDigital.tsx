@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   ShieldCheck,
-  Upload,
   Trash2,
   FileKey,
   AlertTriangle,
@@ -13,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { format, isPast, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -54,10 +54,7 @@ export function CertificadoDigital() {
     setLoading(false);
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const handleFileSelect = (file: File) => {
     if (!file.name.endsWith(".pfx") && !file.name.endsWith(".p12")) {
       toast({
         title: "Formato inválido",
@@ -340,18 +337,19 @@ export function CertificadoDigital() {
           </div>
         </div>
       ) : (
-        <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors cursor-pointer">
-          <Upload className="w-4 h-4" />
-          {certificados.length > 0
-            ? "Adicionar outro certificado"
-            : "Enviar certificado A1 (.pfx)"}
-          <input
-            type="file"
-            accept=".pfx,.p12"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
-        </label>
+        // Anexar por clique OU arrastar (OE-13); a validação .pfx/.p12 segue no handleFileSelect.
+        <CaixaAnexo
+          multiple={false}
+          accept=".pfx,.p12"
+          onAdicionar={(novos) => novos[0] && handleFileSelect(novos[0])}
+          rotulo={
+            <p className="text-sm font-medium text-foreground">
+              {certificados.length > 0
+                ? "Arraste outro certificado aqui ou clique para selecionar"
+                : "Arraste o certificado A1 (.pfx) aqui ou clique para selecionar"}
+            </p>
+          }
+        />
       )}
     </motion.div>
   );

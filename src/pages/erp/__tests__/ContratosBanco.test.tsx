@@ -61,6 +61,20 @@ vi.mock("@/lib/api/clientes", () => ({
   })),
 }));
 
+// O select "Banco" do form (COMPARTILHADO) vem do cadastro de bancos — não mais da lista fixa.
+vi.mock("@/lib/api/bancos", () => ({
+  listarBancos: vi.fn(async () => [
+    { id: "banco-1", nome: "Bradesco", ativo: true },
+    { id: "banco-2", nome: "Sicoob", ativo: true },
+    { id: "banco-3", nome: "Santander", ativo: true },
+    // inativo de propósito: NÃO pode aparecer no seletor do form
+    { id: "banco-4", nome: "Banrisul", ativo: false },
+  ]),
+  criarBanco: vi.fn(),
+  atualizarBanco: vi.fn(),
+  excluirBanco: vi.fn(),
+}));
+
 vi.mock("@/components/ui/confirm-dialog", () => ({
   useConfirm: () => vi.fn(async () => true),
 }));
@@ -69,12 +83,16 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 /** Abre o select shadcn (Radix) e escolhe a opção — pointerdown+click, como o Radix espera.
  * A opção é buscada DENTRO do listbox: o Radix também renderiza um `<select>` oculto com
- * as mesmas opções (autofill de formulário), que atrapalharia a busca por texto. */
+ * as mesmas opções (autofill de formulário), que atrapalharia a busca por texto.
+ * As opções chegam depois do `GET /bancos`, então espera a desejada existir. */
 async function escolherBanco(nome: string) {
   const gatilho = await screen.findByRole("combobox", { name: "Banco" });
   fireEvent.pointerDown(gatilho, { button: 0 });
   fireEvent.click(gatilho);
   const lista = await screen.findByRole("listbox");
+  await waitFor(() =>
+    expect(within(lista).getByRole("option", { name: nome })).toBeInTheDocument(),
+  );
   fireEvent.click(within(lista).getByRole("option", { name: nome }));
 }
 

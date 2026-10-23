@@ -6,6 +6,7 @@ import {
   excluirContratoBanco,
   listarContratosBanco,
 } from "@/lib/api/contratosBanco";
+import { listarBancos } from "@/lib/api/bancos";
 
 /**
  * Contratos do cliente COM O BANCO (ação "Contratos → Com o banco" da lista de clientes,
@@ -40,6 +41,20 @@ vi.mock("@/lib/api/contratosBanco", () => {
   };
 });
 
+// O select "Banco" do form (COMPARTILHADO) vem do cadastro de bancos — não mais da lista fixa.
+vi.mock("@/lib/api/bancos", () => ({
+  listarBancos: vi.fn(async () => [
+    { id: "banco-1", nome: "Bradesco", ativo: true },
+    { id: "banco-2", nome: "Sicoob", ativo: true },
+    { id: "banco-3", nome: "Santander", ativo: true },
+    // inativo de propósito: NÃO pode aparecer no seletor do form
+    { id: "banco-4", nome: "Banrisul", ativo: false },
+  ]),
+  criarBanco: vi.fn(),
+  atualizarBanco: vi.fn(),
+  excluirBanco: vi.fn(),
+}));
+
 vi.mock("@/components/ui/confirm-dialog", () => ({
   useConfirm: () => vi.fn(async () => true),
 }));
@@ -59,13 +74,28 @@ function abrir() {
 
 /** Abre o select shadcn (Radix) e escolhe a opção — pointerdown+click, como o Radix espera.
  * A opção é buscada DENTRO do listbox: o Radix também renderiza um `<select>` oculto com
- * as mesmas opções (autofill de formulário), que atrapalharia a busca por texto. */
+ * as mesmas opções (autofill de formulário), que atrapalharia a busca por texto.
+ * As opções chegam depois do `GET /bancos`, então espera a desejada existir. */
 async function escolherBanco(nome: string) {
   const gatilho = await screen.findByRole("combobox", { name: "Banco" });
   fireEvent.pointerDown(gatilho, { button: 0 });
   fireEvent.click(gatilho);
   const lista = await screen.findByRole("listbox");
+  await waitFor(() =>
+    expect(within(lista).getByRole("option", { name: nome })).toBeInTheDocument(),
+  );
   fireEvent.click(within(lista).getByRole("option", { name: nome }));
+}
+
+/** Abre o select de banco e devolve as opções visíveis (Radix só monta o listbox aberto). */
+async function opcoesDeBanco(): Promise<HTMLElement[]> {
+  const gatilho = await screen.findByRole("combobox", { name: "Banco" });
+  fireEvent.pointerDown(gatilho, { button: 0 });
+  fireEvent.click(gatilho);
+  const lista = await screen.findByRole("listbox");
+  // o carregamento do cadastro é assíncrono: espera as opções dos ativos chegarem
+  await waitFor(() => expect(within(lista).getAllByRole("option").length).toBeGreaterThan(1));
+  return within(lista).getAllByRole("option");
 }
 
 describe("ContratosBancoClienteDialog — dialog client-scoped", () => {
@@ -125,7 +155,56 @@ describe("ContratosBancoClienteDialog — dialog client-scoped", () => {
     expect(await screen.findByText("NB-001")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Excluir/ }));
-
     await waitFor(() => expect(vi.mocked(excluirContratoBanco)).toHaveBeenCalledWith("cb-1"));
+  });
+
+  it("select de banco vem do cadastro: só ATIVOS, com 'Outro' por último", async () => {
+    abrir();
+    expect(await screen.findByText("NB-001")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Novo contrato/ }));
+
+    const nomes = (await opcoesDeBanco()).map((opcao) => opcao.textContent?.trim());
+    expect(nomes).toContain("Bradesco");
+    expect(nomes).toContain("Sicoob");
+    expect(nomes).toContain("Santander");
+    expect(nomes).not.toContain("Banrisul"); // inativo fica fora do seletor
+    expect(nomes[nomes.length - 1]).toBe("Outro");
+  });
+
+  it("sem nenhum banco cadastrado, avisa para cadastrar em Cadastro > Bancos", async () => {
+    vi.mocked(listarBancos).mockResolvedValueOnce([]);
+    abrir();
+    expect(await screen.findByText("NB-001")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Novo contrato/ }));
+
+    expect(
+      await screen.findByText("Nenhum banco cadastrado — cadastre em Cadastro > Bancos"),
+    ).toBeInTheDocument();
+    // o "Outro" (texto livre) segue disponível mesmo com o cadastro vazio
+    await escolherBanco("Outro");
+    expect(await screen.findByLabelText("Nome do banco (outro)")).toBeInTheDocument();
+  });
+
+  it("banco gravado fora do cadastro continua como opção na edição (não perde o valor)", async () => {
+    // o cadastro já não oferece "Bradesco" (desligado, excluído ou texto livre antigo)
+    vi.mocked(listarBancos).mockResolvedValueOnce([
+      { id: "banco-3", nome: "Santander", ativo: true },
+    ]);
+    abrir();
+    expect(await screen.findByText("NB-001")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Editar/ }));
+
+    const gatilho = await screen.findByRole("combobox", { name: "Banco" });
+    await waitFor(() => expect(gatilho).toHaveTextContent("Bradesco"));
+
+    fireEvent.pointerDown(gatilho, { button: 0 });
+    fireEvent.click(gatilho);
+    const lista = await screen.findByRole("listbox");
+    await waitFor(() =>
+      expect(within(lista).getByRole("option", { name: "Bradesco" })).toBeInTheDocument(),
+    );
   });
 });

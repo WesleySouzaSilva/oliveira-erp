@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { mensagemDeErro } from "@/lib/api/http";
+import { listarBancos, type Banco } from "@/lib/api/bancos";
 import {
   atualizarContratoBanco,
   criarContratoBanco,
@@ -26,36 +27,25 @@ import { textoParaValor } from "@/lib/moeda";
  * dialog "Com o banco" da lista de clientes, que nasce já com o `clienteId` do cliente
  * da linha. Só a moldura muda; o pai decide onde o `<form>` é renderizado (dialog, página).
  *
- * Campos espelham o fonte antigo: banco (select da lista fixa; "Outro" abre texto livre),
- * nº do contrato, valor total e parcela (R$, parse em centavos via `src/lib/moeda.ts`),
- * 1º/próximo/último vencimento e observações. `clienteId` e `banco` são os únicos
- * obrigatórios da API — o banco é validado aqui antes de enviar.
+ * Campos espelham o fonte antigo: banco (select com a lista do CADASTRO de Bancos
+ * filtrada por `ativo`; "Outro" abre texto livre), nº do contrato, valor total e parcela
+ * (R$, parse em centavos via `src/lib/moeda.ts`), 1º/próximo/último vencimento e
+ * observações. `clienteId` e `banco` são os únicos obrigatórios da API — o banco é
+ * validado aqui antes de enviar.
+ *
+ * A lista deixa de ser fixa no fonte (correção 5): vem de `GET /bancos` a cada abertura
+ * do form e só os ATIVOS entram no seletor. Sem nenhum cadastrado, o aviso aponta para
+ * Cadastro > Bancos — e o "Outro" (texto livre) continua valendo como saída.
  */
 
-/** Lista fixa de bancos do sistema antigo — "Outro" libera o campo de texto livre. */
-export const BANCOS = [
-  "Banco do Brasil",
-  "Caixa",
-  "Bradesco",
-  "Itaú",
-  "Santander",
-  "Sicoob",
-  "Sicredi",
-  "Cresol",
-  "Banrisul",
-  "BNB",
-  "BASA",
-  "BNDES",
-  "Safra",
-  "CNH",
-  "BTG",
-  "ABC",
-  "Rabobank",
-  "Outro",
-] as const;
+/**
+ * Valor do select que abre o campo de banco livre — sentinela interna, não um nome de
+ * banco: assim um banco registrado chamado "Outro" não colide com a opção de texto livre.
+ */
+const BANCO_OUTRO = "__outro__";
 
-/** Valor do select que abre o campo de banco livre. */
-const BANCO_OUTRO = "Outro";
+/** Rótulo visível da opção de texto livre (o que o teste e a pessoa enxergam). */
+const BANCO_OUTRO_ROTULO = "Outro";
 
 interface Formulario {
   banco: string;
@@ -81,13 +71,16 @@ const FORM_VAZIO: Formulario = {
   observacoes: "",
 };
 
-/** Edição: o contrato existente vira o formulário (banco fora da lista cai em "Outro"). */
+/**
+ * Edição: o contrato existente vira o formulário com o banco GRAVADO nele, seja ele da
+ * lista de cadastro ou texto livre antigo — quem decide se o valor vira opção extra do
+ * select é o componente (a lista só chega depois, assíncrona). Nada de editar se perde.
+ */
 function paraFormulario(contrato: ContratoBanco | null | undefined): Formulario {
   if (!contrato) return FORM_VAZIO;
-  const naLista = (BANCOS as readonly string[]).includes(contrato.banco);
   return {
-    banco: naLista ? contrato.banco : BANCO_OUTRO,
-    bancoOutro: naLista ? "" : contrato.banco ?? "",
+    banco: contrato.banco ?? "",
+    bancoOutro: "",
     numeroContrato: contrato.numeroContrato ?? "",
     valorTotal:
       contrato.valorTotalOperacao === null || contrato.valorTotalOperacao === undefined
@@ -117,6 +110,38 @@ interface Props {
 export function ContratoBancoForm({ clienteId, contrato, onSalvo, onCancelar }: Props) {
   const [form, setForm] = useState<Formulario>(() => paraFormulario(contrato));
   const [salvando, setSalvando] = useState(false);
+  /** Bancos do cadastro (só ATIVOS) — a lista fixa do fonte virou `GET /bancos`. */
+  const [bancos, setBancos] = useState<Banco[]>([]);
+  const [carregandoBancos, setCarregandoBancos] = useState(true);
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        // A API devolve os dois lados; o seletor mostra só os ativos (desligar sai do form).
+        const todos = await listarBancos();
+        if (vivo) setBancos(todos.filter((banco) => banco.ativo));
+      } catch (erro) {
+        toast.error(mensagemDeErro(erro));
+      } finally {
+        if (vivo) setCarregandoBancos(false);
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  /**
+   * Opções do select: bancos ativos do cadastro + o banco GRAVADO no contrato em edição
+   * que não está mais na lista (desligado, excluído ou texto livre antigo) — vira opção
+   * extra para a edição não perder o valor. "Outro" (texto livre) fecha a lista.
+   */
+  const opcoes: Banco[] = [...bancos];
+  const bancoGravado = contrato?.banco?.trim();
+  if (bancoGravado && !opcoes.some((banco) => banco.nome === bancoGravado)) {
+    opcoes.push({ id: `gravado-${bancoGravado}`, nome: bancoGravado, ativo: false });
+  }
 
   const campo = (nome: keyof Formulario) => ({
     id: `contrato-banco-${nome}`,
@@ -184,13 +209,21 @@ export function ContratoBancoForm({ clienteId, contrato, onSalvo, onCancelar }: 
               <SelectValue placeholder="Selecione o banco *" />
             </SelectTrigger>
             <SelectContent>
-              {BANCOS.map((banco) => (
-                <SelectItem key={banco} value={banco}>
-                  {banco}
+              {opcoes.map((banco) => (
+                <SelectItem key={banco.id} value={banco.nome}>
+                  {banco.nome}
                 </SelectItem>
               ))}
+              {/* Sempre por último: banco que não está no cadastro (nome livre). */}
+              <SelectItem value={BANCO_OUTRO}>{BANCO_OUTRO_ROTULO}</SelectItem>
             </SelectContent>
           </Select>
+          {/* Cadastro vazio: o form não trava (o "Outro" resolve), mas aponta onde cadastrar. */}
+          {!carregandoBancos && bancos.length === 0 && (
+            <p className="text-xs text-amber-600 dark:text-amber-500">
+              Nenhum banco cadastrado — cadastre em Cadastro &gt; Bancos
+            </p>
+          )}
           {form.banco === BANCO_OUTRO && (
             <Input
               id="contrato-banco-bancoOutro"

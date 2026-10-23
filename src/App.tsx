@@ -24,6 +24,7 @@ const ContratosBancoApi = lazyRetry(() => import("./pages/erp/ContratosBanco"));
 const UsuariosApi = lazyRetry(() => import("./pages/erp/Usuarios"));
 const SetoresApi = lazyRetry(() => import("./pages/erp/Setores"));
 const TiposTarefaApi = lazyRetry(() => import("./pages/erp/TiposTarefa"));
+const BancosApi = lazyRetry(() => import("./pages/erp/Bancos"));
 const FuncoesApi = lazyRetry(() => import("./pages/erp/Funcoes"));
 const PermissoesApi = lazyRetry(() => import("./pages/erp/Permissoes"));
 const AuditoriaApi = lazyRetry(() => import("./pages/erp/Auditoria"));
@@ -214,6 +215,7 @@ registrarRotas({
   "/erp/usuarios": UsuariosApi,
   "/erp/setores": SetoresApi,
   "/erp/tipos-tarefa": TiposTarefaApi,
+  "/erp/bancos": BancosApi,
   "/erp/funcoes": FuncoesApi,
   "/erp/permissoes": PermissoesApi,
   "/erp/auditoria": AuditoriaApi,
@@ -302,6 +304,7 @@ const App = () => (
               <Route path="usuarios" element={<UsuariosApi />} />
               <Route path="setores" element={<SetoresApi />} />
               <Route path="tipos-tarefa" element={<TiposTarefaApi />} />
+              <Route path="bancos" element={<BancosApi />} />
               <Route path="funcoes" element={<FuncoesApi />} />
               <Route path="permissoes" element={<PermissoesApi />} />
               <Route path="auditoria" element={<AuditoriaApi />} />

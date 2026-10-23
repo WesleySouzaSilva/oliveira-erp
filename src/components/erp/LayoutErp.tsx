@@ -1,7 +1,7 @@
 import { NavLink, Navigate, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  Briefcase, Building2, FileSignature, FolderTree, KeyRound, Landmark, Layers, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ScrollText, ShieldCheck, Tags, UserCog, Users, Waypoints, X,
+  Banknote, Briefcase, Building2, FileSignature, FolderTree, KeyRound, Landmark, Layers, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ScrollText, ShieldCheck, Tags, UserCog, Users, Waypoints, X,
 } from "lucide-react";
 import { autenticadoApi, buscarUsuarioAtual, logoutApi, usuarioApi, type UsuarioApi } from "@/lib/api/http";
 import { useNotificacoes } from "@/hooks/useNotificacoes";
@@ -233,6 +233,10 @@ export default function LayoutErp() {
               {/* Tipos de tarefa: é o destino do aviso "cadastre em Cadastro > Tipos de
                   tarefa" do form de nova tarefa (Tarefas.tsx) — rótulo exato. */}
               {itemMenu(<Tags className="w-4 h-4" />, "Tipos de tarefa", "/erp/tipos-tarefa")}
+              {/* Bancos: é a origem do seletor "Banco" do form de contrato do Comercial
+                  (antes lista fixa no fonte) — destino do aviso "cadastre em Cadastro >
+                  Bancos". */}
+              {itemMenu(<Banknote className="w-4 h-4" />, "Bancos", "/erp/bancos")}
             </>
           )}
         </nav>

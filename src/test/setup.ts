@@ -40,3 +40,20 @@ if (typeof Element !== "undefined" && typeof Element.prototype.hasPointerCapture
   Element.prototype.setPointerCapture = () => {};
   Element.prototype.releasePointerCapture = () => {};
 }
+
+// Ambientes sem localStorage (node --experimental-... / jsdom enxuto): o Layout do ERP
+// lê/escreve escolhas de menu (recolhido, grupos) — sem stub o componente quebra no mount.
+if (typeof window.localStorage === "undefined" || window.localStorage === null) {
+  const mapa = new Map<string, string>();
+  const stub = {
+    getItem: (chave: string) => mapa.get(chave) ?? null,
+    setItem: (chave: string, valor: string) => void mapa.set(chave, String(valor)),
+    removeItem: (chave: string) => void mapa.delete(chave),
+    clear: () => mapa.clear(),
+    key: (indice: number) => [...mapa.keys()][indice] ?? null,
+    get length() {
+      return mapa.size;
+    },
+  };
+  Object.defineProperty(window, "localStorage", { writable: true, value: stub });
+}

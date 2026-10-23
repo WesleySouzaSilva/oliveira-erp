@@ -1,7 +1,7 @@
 import { NavLink, Navigate, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  Banknote, Briefcase, Building2, FileSignature, FolderTree, KeyRound, Landmark, Layers, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ScrollText, ShieldCheck, Tags, UserCog, Users, Waypoints, X,
+  Banknote, Briefcase, Building2, ChevronDown, FileSignature, FolderTree, KeyRound, Landmark, Layers, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ScrollText, ShieldCheck, Tags, UserCog, Users, Waypoints, X,
 } from "lucide-react";
 import { autenticadoApi, buscarUsuarioAtual, logoutApi, usuarioApi, type UsuarioApi } from "@/lib/api/http";
 import { useNotificacoes } from "@/hooks/useNotificacoes";
@@ -23,6 +23,8 @@ import { TemaToggle } from "@/components/theme/TemaToggle";
  *   não vale aqui: a gaveta abre cheia, com os rótulos), com fundo escurecido atrás.
  */
 const CHAVE_MENU_RECOLHIDO = "oliveira:menu-recolhido";
+/** Grupos do menu abertos/fechados (estilo do fonte antigo: clica no grupo e abre o submenu). */
+const CHAVE_MENU_GRUPOS = "oliveira:menu-grupos";
 const SUPABASE_CONFIGURADO = Boolean(import.meta.env.VITE_SUPABASE_URL);
 
 export default function LayoutErp() {
@@ -36,6 +38,20 @@ export default function LayoutErp() {
   );
   /** Gaveta do menu aberta no celular. */
   const [gavetaAberta, setGavetaAberta] = useState(false);
+  /**
+   * Grupos abertos/fechados por id (padrão do fonte antigo — SidebarNavSection com
+   * openMenus/toggleMenu). Guardado no localStorage; ausente = ABERTO, para nada
+   * sumir do menu sem a pessoa ter mexido (pedido do titular 22/10).
+   */
+  const [gruposAbertos, setGruposAbertos] = useState<Record<string, boolean>>(() => {
+    try {
+      const bruto = window.localStorage.getItem(CHAVE_MENU_GRUPOS);
+      if (bruto) return JSON.parse(bruto) as Record<string, boolean>;
+    } catch {
+      /* localStorage indisponível ou JSON sujo: começa com tudo aberto */
+    }
+    return {};
+  });
 
   // Token guardado mas sem usuário em cache? Confirma a sessão contra a API (GET /auth/me).
   useEffect(() => {
@@ -94,6 +110,43 @@ export default function LayoutErp() {
       <span className={recolhido ? "lg:hidden" : ""}>{rotulo}</span>
     </NavLink>
   );
+
+  /**
+   * Grupo retrátil do menu (espelho do fonte antigo): o rótulo do grupo é um botão —
+   * clicou, abre/fecha os itens dele; a escolha fica no localStorage. Com a barra
+   * recolhida (só ícones) os grupos ficam sempre abertos e o rótulo some.
+   */
+  const grupoMenu = (id: string, titulo: string, conteudo: ReactNode) => {
+    const aberto = gruposAbertos[id] !== false;
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={() =>
+            setGruposAbertos((atual) => {
+              const novo = { ...atual, [id]: !aberto };
+              try {
+                window.localStorage.setItem(CHAVE_MENU_GRUPOS, JSON.stringify(novo));
+              } catch {
+                /* sem localStorage: a escolha vale só nesta sessão */
+              }
+              return novo;
+            })
+          }
+          aria-expanded={aberto}
+          className={`w-full flex items-center gap-1 px-3 pt-4 pb-1 text-[11px] font-semibold uppercase text-muted-foreground tracking-wide hover:text-foreground transition-colors ${recolhido ? "lg:hidden" : ""}`}
+        >
+          <ChevronDown
+            className={`w-3 h-3 shrink-0 transition-transform ${aberto ? "" : "-rotate-90"}`}
+          />
+          {titulo}
+        </button>
+        {(aberto || recolhido) && (
+          <div className="space-y-1">{conteudo}</div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background flex flex-col lg:flex-row">
@@ -160,7 +213,7 @@ export default function LayoutErp() {
           </div>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1">
+        <nav className="flex-1 min-h-0 overflow-y-auto p-3 space-y-1">
           {/* Sino de notificações no menu Tarefas: some quando a pessoa ABRE a tarefa */}
           {itemMenu(
             <ListChecks className="w-4 h-4" />,
@@ -172,73 +225,71 @@ export default function LayoutErp() {
               </span>
             ) : undefined,
           )}
-          {/* Grupo Clientes: Base (correção 3 moveu os contratos para o grupo Comercial) */}
-          <p
-            className={`px-3 pt-4 pb-1 text-[11px] font-semibold uppercase text-muted-foreground tracking-wide ${recolhido ? "lg:hidden" : ""}`}
-          >
-            Clientes
-          </p>
-          {itemMenu(<Users className="w-4 h-4" />, "Base", "/erp/clientes")}
-          {/* Contratos do cliente COM O ESCRITÓRIO ficam no grupo Clientes (correção do
-              titular 22/10: em Clientes → Contratos é o contrato com o escritório) */}
-          {itemMenu(
-            <FileSignature className="w-4 h-4" />,
-            "Contratos",
-            "/erp/contratos",
+          {/* Grupo Clientes: Base + Contratos (contrato com o ESCRITÓRIO) */}
+          {grupoMenu(
+            "clientes",
+            "Clientes",
+            <>
+              {itemMenu(<Users className="w-4 h-4" />, "Base", "/erp/clientes")}
+              {itemMenu(
+                <FileSignature className="w-4 h-4" />,
+                "Contratos",
+                "/erp/contratos",
+              )}
+            </>,
           )}
           {/* Grupo Comercial: "Contratos Cliente" = contrato do cliente COM OS BANCOS
               (correção do titular 22/10) */}
-          <p
-            className={`px-3 pt-4 pb-1 text-[11px] font-semibold uppercase text-muted-foreground tracking-wide ${recolhido ? "lg:hidden" : ""}`}
-          >
-            Comercial
-          </p>
-          {itemMenu(
-            <Landmark className="w-4 h-4" />,
-            "Contratos Cliente",
-            "/erp/contratos-banco",
+          {grupoMenu(
+            "comercial",
+            "Comercial",
+            itemMenu(
+              <Landmark className="w-4 h-4" />,
+              "Contratos Cliente",
+              "/erp/contratos-banco",
+            ),
           )}
           {/* Ferramentas: códigos dos tribunais — leitura para TODOS (a gestão
               (cadastrar/remover/histórico) é só admin, barrada pela API) */}
-          <p
-            className={`px-3 pt-4 pb-1 text-[11px] font-semibold uppercase text-muted-foreground tracking-wide ${recolhido ? "lg:hidden" : ""}`}
-          >
-            Ferramentas
-          </p>
-          {itemMenu(
-            <KeyRound className="w-4 h-4" />,
-            "Códigos dos tribunais",
-            "/erp/codigos-tribunais",
+          {grupoMenu(
+            "ferramentas",
+            "Ferramentas",
+            itemMenu(
+              <KeyRound className="w-4 h-4" />,
+              "Códigos dos tribunais",
+              "/erp/codigos-tribunais",
+            ),
           )}
           {/* Pessoas e permissões: SÓ o administrador (decisão do titular 16/10/2026) —
               é ele quem cadastra usuário, atribui permissão e acompanha a auditoria */}
-          {usuario?.admin && (
-            <>
-              {itemMenu(<UserCog className="w-4 h-4" />, "Usuários", "/erp/usuarios")}
-              {itemMenu(<ShieldCheck className="w-4 h-4" />, "Permissões", "/erp/permissoes")}
-              {itemMenu(<ScrollText className="w-4 h-4" />, "Auditoria", "/erp/auditoria")}
-            </>
-          )}
-          {(usuario?.admin || usuario?.ceo) && (
-            <>
-              <p
-                className={`px-3 pt-4 pb-1 text-[11px] font-semibold uppercase text-muted-foreground tracking-wide ${recolhido ? "lg:hidden" : ""}`}
-              >
-                Cadastro
-              </p>
-              {itemMenu(<FolderTree className="w-4 h-4" />, "Objetos", "/erp/objetos")}
-              {itemMenu(<Layers className="w-4 h-4" />, "Sub-Categoria / Objeto", "/erp/sub-objetos")}
-              {itemMenu(<Waypoints className="w-4 h-4" />, "Setores", "/erp/setores")}
-              {itemMenu(<Briefcase className="w-4 h-4" />, "Funções", "/erp/funcoes")}
-              {/* Tipos de tarefa: é o destino do aviso "cadastre em Cadastro > Tipos de
-                  tarefa" do form de nova tarefa (Tarefas.tsx) — rótulo exato. */}
-              {itemMenu(<Tags className="w-4 h-4" />, "Tipos de tarefa", "/erp/tipos-tarefa")}
-              {/* Bancos: é a origem do seletor "Banco" do form de contrato do Comercial
-                  (antes lista fixa no fonte) — destino do aviso "cadastre em Cadastro >
-                  Bancos". */}
-              {itemMenu(<Banknote className="w-4 h-4" />, "Bancos", "/erp/bancos")}
-            </>
-          )}
+          {usuario?.admin &&
+            grupoMenu(
+              "administracao",
+              "Administração",
+              <>
+                {itemMenu(<UserCog className="w-4 h-4" />, "Usuários", "/erp/usuarios")}
+                {itemMenu(<ShieldCheck className="w-4 h-4" />, "Permissões", "/erp/permissoes")}
+                {itemMenu(<ScrollText className="w-4 h-4" />, "Auditoria", "/erp/auditoria")}
+              </>,
+            )}
+          {(usuario?.admin || usuario?.ceo) &&
+            grupoMenu(
+              "cadastro",
+              "Cadastro",
+              <>
+                {itemMenu(<FolderTree className="w-4 h-4" />, "Objetos", "/erp/objetos")}
+                {itemMenu(<Layers className="w-4 h-4" />, "Sub-Categoria / Objeto", "/erp/sub-objetos")}
+                {itemMenu(<Waypoints className="w-4 h-4" />, "Setores", "/erp/setores")}
+                {itemMenu(<Briefcase className="w-4 h-4" />, "Funções", "/erp/funcoes")}
+                {/* Tipos de tarefa: é o destino do aviso "cadastre em Cadastro > Tipos de
+                    tarefa" do form de nova tarefa (Tarefas.tsx) — rótulo exato. */}
+                {itemMenu(<Tags className="w-4 h-4" />, "Tipos de tarefa", "/erp/tipos-tarefa")}
+                {/* Bancos: é a origem do seletor "Banco" do form de contrato do Comercial
+                    (antes lista fixa no fonte) — destino do aviso "cadastre em Cadastro >
+                    Bancos". */}
+                {itemMenu(<Banknote className="w-4 h-4" />, "Bancos", "/erp/bancos")}
+              </>,
+            )}
         </nav>
 
         <div className={`p-3 border-t space-y-2 ${recolhido ? "lg:px-2" : ""}`}>

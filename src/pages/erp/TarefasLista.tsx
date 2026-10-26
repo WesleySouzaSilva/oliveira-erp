@@ -1,8 +1,7 @@
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Circle, Eye, EyeOff, Lock, Star } from "lucide-react";
+import { ChevronLeft, ChevronRight, History, Lock } from "lucide-react";
 import type { Tarefa } from "@/lib/api/tarefas";
-
-/** Coluna do marcador: clique troca na hora (otimista) e volta se a API negar. */
-type Marcador = "importante" | "urgente" | "lido";
+import { Badge } from "@/components/ui/badge";
+import { corDePrioridade } from "@/lib/prioridade";
 
 export interface TabelaTarefasProps {
   /** O conjunto carregado; a pagina e so recorte em memoria (a carga traz ate 200). */
@@ -12,14 +11,18 @@ export interface TabelaTarefasProps {
   onPagina: (pagina: number) => void;
   onPorPagina: (quantidade: number) => void;
   onAbrir: (tarefa: Tarefa) => void;
-  onAlternar: (tarefa: Tarefa, concluida: boolean) => void;
-  onMarcar: (tarefa: Tarefa, campo: Marcador, valor: boolean) => void;
+  /**
+   * Botão "Histórico" da linha: abre a JANELA CENTRAL grande com a timeline inteira da
+   * tarefa (quem criou/recebeu/encaminhou, recados e anexos).
+   */
+  onHistorico: (tarefa: Tarefa) => void;
   nomeDeResponsavel: (userId: string) => string;
 }
 
 const HOJE = new Date().toISOString().split("T")[0];
 
 const dataBr = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("pt-BR");
+
 
 /** "2026-10-13T10:30:00Z" -> "13/10/2026 07:30" (ou o horario local). */
 function compromissoBr(iso: string): string {
@@ -29,16 +32,18 @@ function compromissoBr(iso: string): string {
 }
 
 /**
- * Lista de tarefas no padrão ADVBOX (`docs/exemplo-detalhado-tarefa.html`): uma tabela
- * com os quatro marcadores clicaveis (Resolvido, Importante, Urgente, Lido), o titulo
- * com o cliente, as DUAS datas (Data compromisso e Prazo fatal), o responsavel e
- * paginacao — em vez de secoes ou cards.
+ * Lista de tarefas no padrão ADVBOX, atualizada em 16/10/2026 (pedido do titular):
  *
- * A linha inteira abre o drawer de detalhe; os marcadores param a propagacao para nao
- * abrir junto. Linha atrasada ganha o fundo vermelho, como o `.late` do legado.
+ * - os quatro marcadores antigos (OK, Importante, Urgente, Lido) SAIRAM — o OK virou o
+ *   campo **Status** (Aberta/Concluída) no detalhe, e Importante/Urgente/Lido não existem
+ *   mais;
+ * - Prioridade virou CAMPO DE TEXTO (ex.: "Alta", "Baixa") — coluna própria;
+ * - coluna Tarefa enxuta (base 1366x768) para o botão Histórico ficar visível sem rolar.
+ *
+ * A linha inteira abre a janela central de detalhe; linha atrasada ganha fundo vermelho.
  */
 export function TabelaTarefas({
-  tarefas, pagina, porPagina, onPagina, onPorPagina, onAbrir, onAlternar, onMarcar, nomeDeResponsavel,
+  tarefas, pagina, porPagina, onPagina, onPorPagina, onAbrir, onHistorico, nomeDeResponsavel,
 }: TabelaTarefasProps) {
   const inicio = pagina * porPagina;
   const visiveis = tarefas.slice(inicio, inicio + porPagina);
@@ -53,15 +58,14 @@ export function TabelaTarefas({
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="bg-secondary/60 text-xs uppercase tracking-wide text-muted-foreground">
-              <th className="px-3 py-2.5 text-left w-10" title="Resolvido">OK</th>
-              <th className="px-3 py-2.5 text-left w-12" title="Importante">Imp</th>
-              <th className="px-3 py-2.5 text-left w-14" title="Urgente">Urg</th>
-              <th className="px-3 py-2.5 text-left w-12" title="Lido">Lido</th>
+              <th className="px-3 py-2.5 text-left">Status</th>
               <th className="px-3 py-2.5 text-left">Tarefa</th>
               <th className="px-3 py-2.5 text-left">Cliente</th>
+              <th className="px-3 py-2.5 text-left">Prioridade</th>
               <th className="px-3 py-2.5 text-left whitespace-nowrap">Data compromisso</th>
               <th className="px-3 py-2.5 text-left whitespace-nowrap">Prazo fatal</th>
               <th className="px-3 py-2.5 text-left">Responsável</th>
+              <th className="px-3 py-2.5 text-left">Histórico</th>
             </tr>
           </thead>
           <tbody>
@@ -69,7 +73,6 @@ export function TabelaTarefas({
               const prazoFatal = tarefa.prazoFatal ?? tarefa.dataVencimento;
               const atrasada = !tarefa.concluida && prazoFatal < HOJE;
               const hoje = !tarefa.concluida && prazoFatal === HOJE;
-              const urgente = tarefa.prioridade === "urgente";
               return (
                 <tr
                   key={tarefa.id}
@@ -78,64 +81,15 @@ export function TabelaTarefas({
                     atrasada ? "bg-destructive/5" : ""
                   } ${tarefa.concluida ? "opacity-70" : ""}`}
                 >
-                  <td className="px-3 py-2.5" title={tarefa.concluida ? "Reabrir tarefa" : "Marcar como resolvida"}>
-                    <button
-                      type="button"
-                      onClick={(evento) => { evento.stopPropagation(); onAlternar(tarefa, !tarefa.concluida); }}
-                      aria-label={tarefa.concluida ? "Reabrir tarefa" : "Marcar como resolvida"}
-                      className="shrink-0"
-                    >
-                      {tarefa.concluida ? (
-                        <CheckCircle2 className="w-4 h-4 text-success" />
-                      ) : (
-                        <Circle className="w-4 h-4 text-muted-foreground hover:text-accent transition-colors" />
-                      )}
-                    </button>
+                  <td className="px-3 py-2.5">
+                    <Badge variant={tarefa.concluida ? "outline" : "secondary"}>
+                      {tarefa.concluida ? "Concluída" : "Aberta"}
+                    </Badge>
                   </td>
 
-                  <td className="px-3 py-2.5" title={tarefa.importante ? "Importante" : "Marcar como importante"}>
-                    <button
-                      type="button"
-                      onClick={(evento) => { evento.stopPropagation(); onMarcar(tarefa, "importante", !tarefa.importante); }}
-                      aria-label="Importante"
-                    >
-                      <Star
-                        className={`w-4 h-4 transition-colors ${
-                          tarefa.importante ? "text-warning fill-warning" : "text-muted-foreground hover:text-warning"
-                        }`}
-                      />
-                    </button>
-                  </td>
-
-                  <td className="px-3 py-2.5" title={urgente ? "Urgente" : "Marcar como urgente"}>
-                    <button
-                      type="button"
-                      onClick={(evento) => { evento.stopPropagation(); onMarcar(tarefa, "urgente", !urgente); }}
-                      aria-label="Urgente"
-                    >
-                      <AlertTriangle
-                        className={`w-4 h-4 transition-colors ${
-                          urgente ? "text-destructive" : "text-muted-foreground hover:text-destructive"
-                        }`}
-                      />
-                    </button>
-                  </td>
-
-                  <td className="px-3 py-2.5" title={tarefa.lido ? "Nao lida" : "Marcar como lida"}>
-                    <button
-                      type="button"
-                      onClick={(evento) => { evento.stopPropagation(); onMarcar(tarefa, "lido", !tarefa.lido); }}
-                      aria-label="Lido"
-                    >
-                      {tarefa.lido ? (
-                        <Eye className="w-4 h-4 text-accent" />
-                      ) : (
-                        <EyeOff className="w-4 h-4 text-muted-foreground hover:text-accent transition-colors" />
-                      )}
-                    </button>
-                  </td>
-
-                  <td className="px-3 py-2.5 min-w-[22rem] max-w-[40rem]">
+                  {/* Tarefa: coluna enxuta (base 1366x768) — o titulo trunca e o botao
+                      Historico da linha fica sempre visivel sem rolar a tabela */}
+                  <td className="px-3 py-2.5 min-w-[12rem] max-w-[18rem]">
                     <div className="flex items-center gap-2">
                       <span
                         className={`font-medium truncate ${
@@ -147,15 +101,28 @@ export function TabelaTarefas({
                       </span>
                       {tarefa.privada && <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-label="Privada" />}
                     </div>
-                    {tarefa.descricao && (
-                      <p className="text-xs text-muted-foreground truncate mt-0.5">{tarefa.descricao}</p>
-                    )}
+                    {/* Setor que enviou + numero do contrato (16/10/2026): o cliente tem
+                        coluna propria e a descricao sai daqui (fica no tooltip do titulo) */}
+                    <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                      {tarefa.setorNome ? `Setor: ${tarefa.setorNome}` : "—"}
+                      {tarefa.contratoNumero ? ` · Contrato nº ${tarefa.contratoNumero}` : ""}
+                    </p>
                   </td>
 
                   <td className="px-3 py-2.5">
                     {tarefa.nomeCliente ? (
-                      <span className="text-accent font-medium truncate block max-w-[18rem]" title={tarefa.nomeCliente}>
+                      <span className="text-accent font-medium truncate block max-w-[10rem]" title={tarefa.nomeCliente}>
                         {tarefa.nomeCliente}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+
+                  <td className="px-3 py-2.5">
+                    {tarefa.prioridade ? (
+                      <span className={`text-xs capitalize ${corDePrioridade(tarefa.prioridade)}`}>
+                        {tarefa.prioridade}
                       </span>
                     ) : (
                       <span className="text-muted-foreground">—</span>
@@ -187,12 +154,24 @@ export function TabelaTarefas({
                       <span className="text-xs">{nomeDeResponsavel(tarefa.responsavelId)}</span>
                     </span>
                   </td>
+
+                  <td className="px-3 py-2.5 whitespace-nowrap">
+                    <button
+                      type="button"
+                      onClick={(evento) => { evento.stopPropagation(); onHistorico(tarefa); }}
+                      aria-label={`Histórico da tarefa ${tarefa.titulo}`}
+                      title="Ver toda a movimentação da tarefa"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-input px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                    >
+                      <History className="w-3.5 h-3.5" /> Histórico
+                    </button>
+                  </td>
                 </tr>
               );
             })}
             {visiveis.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                <td colSpan={8} className="px-3 py-8 text-center text-sm text-muted-foreground">
                   Nada nesta página.
                 </td>
               </tr>

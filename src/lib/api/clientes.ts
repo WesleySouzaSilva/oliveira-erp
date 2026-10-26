@@ -6,6 +6,38 @@ import { apiFetch } from "@/lib/api/http";
  * que por sua vez preservam as colunas do banco legado.
  */
 
+/** Um endereço do cliente — contrato 16/10/2026: o cliente passa a ter VÁRIOS. */
+export interface ClienteEndereco {
+  id?: string;
+  /** `residencial` | `empresarial` | `escritorio` (texto livre no banco). */
+  tipo: string;
+  logradouro: string;
+  municipio?: string;
+  uf?: string;
+  /** Códigos IBGE escolhidos no menu de cidades da linha (V16). */
+  ibgeCidade?: string;
+  ibgeEstado?: string;
+  cep?: string;
+  /** Um único endereço principal por cliente (o preenchido nas colunas legadas). */
+  principal?: boolean;
+}
+
+/** Um telefone do cliente — contrato 16/10/2026. */
+export interface ClienteTelefone {
+  id?: string;
+  /** `celular` | `fixo` | `comercial` (texto livre no banco). */
+  tipo: string;
+  numero: string;
+  principal?: boolean;
+}
+
+/** Um e-mail do cliente — contrato 16/10/2026. */
+export interface ClienteEmail {
+  id?: string;
+  email: string;
+  principal?: boolean;
+}
+
 /** Dados de cadastro/edição (POST e PUT são substituição total dos campos do formulário). */
 export interface ClienteNovo {
   nome: string;
@@ -21,6 +53,14 @@ export interface ClienteNovo {
   cep?: string | null;
   telefone?: string | null;
   email?: string | null;
+  /** Múltiplos contatos/endereços (contrato 16/10/2026): POST aceita as 3 listas embutidas e
+   * `PUT/PATCH /clientes/{id}` substitui as listas quando vierem (ausente = não mexe). */
+  telefones?: ClienteTelefone[];
+  emails?: ClienteEmail[];
+  enderecos?: ClienteEndereco[];
+  /** Códigos IBGE da cidade/estado escolhidos no menu de localidade (V16). */
+  ibgeCidade?: string | null;
+  ibgeEstado?: string | null;
   nomePropriedade?: string | null;
   culturaPrincipal?: string | null;
   observacoes?: string | null;
@@ -48,7 +88,14 @@ export interface Cliente extends ClienteNovo {
 /** Página no contrato estável da API (`Page` → `content` + `page`) — mora em `pagina.ts`. */
 export type { Pagina } from "@/lib/api/pagina";
 
+/** Onde a busca de texto procura — o "tipo de busca" do select da tela de clientes. */
+export type BuscaClientes = "nome" | "cpf_cnpj" | "email";
+
 export interface FiltroClientes {
+  /** Texto digitado na busca (o campo em que ele é procurado vem em `buscaEm`). */
+  busca?: string;
+  /** `nome`, `cpf_cnpj` ou `email`; sem ele a API procura em nome OU CPF/CNPJ. */
+  buscaEm?: BuscaClientes;
   nome?: string;
   cpfCnpj?: string;
   situacao?: string;
@@ -59,6 +106,8 @@ export interface FiltroClientes {
 export function listarClientes(filtro: FiltroClientes = {}): Promise<Pagina<Cliente>> {
   return apiFetch<Pagina<Cliente>>("/clientes", {
     params: {
+      busca: filtro.busca,
+      buscaEm: filtro.buscaEm,
       nome: filtro.nome,
       cpfCnpj: filtro.cpfCnpj,
       situacao: filtro.situacao,

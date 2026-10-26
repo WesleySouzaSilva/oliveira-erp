@@ -25,6 +25,9 @@ export interface UsuarioApi {
   organizacaoId?: string;
   perfis?: string[];
   permissoes?: string[];
+  /** CEO e admin vêm do `/auth/me` (e do login) — usados para esconder menus de gestão. */
+  ceo?: boolean;
+  admin?: boolean;
 }
 
 /** Erro de domínio vindo da API (ou falha de rede, com `status = 0`). */
@@ -215,6 +218,34 @@ async function lerCorpo(resposta: Response): Promise<unknown> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Baixa um arquivo autenticado (Bearer + renovação de sessão) e o salva no computador da
+ * pessoa — o `<a href>` puro não manda o token, então 401 na hora.
+ * `caminho` é relativo à API (ex.: `/tarefas/anexos/{id}/conteudo`).
+ */
+export async function baixarArquivo(caminho: string, nome: string): Promise<void> {
+  const resposta = await fetch(apiUrl(caminho), {
+    headers: tokenApi() ? { Authorization: `Bearer ${tokenApi()}` } : {},
+    credentials: "include",
+  });
+  if (!resposta.ok) {
+    const corpo = await lerCorpo(resposta);
+    const problema = (corpo ?? {}) as { detalhe?: string; mensagem?: string };
+    throw new ErroApi(problema.detalhe || problema.mensagem || "Não foi possível baixar o arquivo.", {
+      status: resposta.status,
+    });
+  }
+  const blob = await resposta.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nome;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 /** Login na API própria. Guarda token/usuário e devolve o usuário autenticado. */

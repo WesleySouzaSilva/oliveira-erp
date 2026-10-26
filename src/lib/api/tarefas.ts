@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api/http";
+import { apiFetch, baixarArquivo } from "@/lib/api/http";
 import type { Pagina } from "@/lib/api/pagina";
 
 /**
@@ -37,8 +37,12 @@ export interface Tarefa {
   privada: boolean;
   /** "Tarefa futura": criada agora para valer depois. */
   tarefaFutura: boolean;
-  prioridade: "normal" | "urgente" | string;
+  prioridade: "normal" | "alta" | "urgente" | string;
   nomeCliente?: string | null;
+  /** Setor que ENVIOU a tarefa (rotulo, vem da formula da API) — coluna "Tarefa". */
+  setorNome?: string | null;
+  /** Número do contrato a que a tarefa pertence — coluna "Tarefa". */
+  contratoNumero?: string | null;
   createdBy?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -63,6 +67,11 @@ export interface TarefaNova {
   privada?: boolean | null;
   tarefaFutura?: boolean | null;
   nomeCliente?: string | null;
+  /**
+   * Setor dono da tarefa (V11) — no encaminhamento na criação, o setor que recebe.
+   * Com `responsavelId` preenchido, a tarefa já nasce com outro responsável.
+   */
+  setorId?: string | null;
 }
 
 /**
@@ -92,11 +101,16 @@ export interface TarefaAtualizacao {
   tarefaFutura?: boolean;
 }
 
+/** Onde a busca de texto procura — o "tipo de busca" do select da tela de tarefas. */
+export type BuscaTarefas = "titulo" | "descricao" | "cliente";
+
 export interface FiltroTarefas {
   /** Recorte "Minhas tarefas" (o painel do próprio usuário). */
   minhas?: boolean;
   concluida?: boolean;
   busca?: string;
+  /** `titulo`, `descricao` ou `cliente`; sem ele a API procura em título OU cliente. */
+  buscaEm?: BuscaTarefas;
   processoId?: string;
   page?: number;
   size?: number;
@@ -108,6 +122,7 @@ export function listarTarefas(filtro: FiltroTarefas = {}): Promise<Pagina<Tarefa
       minhas: filtro.minhas,
       concluida: filtro.concluida,
       busca: filtro.busca,
+      buscaEm: filtro.buscaEm,
       processoId: filtro.processoId,
       page: filtro.page ?? 0,
       size: filtro.size ?? 50,
@@ -128,4 +143,77 @@ export function atualizarTarefa(id: string, dados: TarefaAtualizacao): Promise<T
 /** Marca como concluída/pendente — a conclusão grava a auditoria na API. */
 export function concluirTarefa(id: string, concluida: boolean): Promise<Tarefa> {
   return atualizarTarefa(id, { concluida });
+}
+
+// ------------------------------------------------------------ movimentação (timeline)
+
+/**
+ * Uma linha da trilha da tarefa (`GET /tarefas/{id}/historico`): quem fez, quando, de/para,
+ * o que mudou (`campos`) e o IP do PC. Campos casam com `TarefaHistoricoDTO` da API.
+ */
+export interface TarefaHistorico {
+  id: string;
+  tarefaId?: string | null;
+  /** `criada` | `editada` | `encaminhada` | `concluida` | `reaberta`. */
+  acao: string;
+  executadoPor?: string | null;
+  executadoPorNome?: string | null;
+  responsavelId?: string | null;
+  deUsuarioId?: string | null;
+  paraUsuarioId?: string | null;
+  deUsuarioNome?: string | null;
+  paraUsuarioNome?: string | null;
+  setorId?: string | null;
+  setorNome?: string | null;
+  /** Diff da edição: `[{ campo, de, para }]`. */
+  campos?: { campo: string; de?: string | null; para?: string | null }[] | null;
+  titulo?: string | null;
+  ipRegistro?: string | null;
+  /** ISO-8601. */
+  dataAcao?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  /** Recado escrito junto da ação (V12 — ex.: o texto digitado ao encaminhar). */
+  mensagem?: string | null;
+  /** Anexos da ação (V12): só metadados; o download é `baixarAnexoTarefa`. */
+  anexos?: TarefaAnexo[] | null;
+}
+
+/** Anexo de tarefa no JSON (V12): os bytes ficam na pasta do servidor da API. */
+export interface TarefaAnexo {
+  id: string;
+  nomeOriginal: string;
+  mimeTipo?: string | null;
+  tamanhoBytes?: number | null;
+}
+
+/** Trilha da tarefa (mais recente primeiro). 403 se a pessoa não for admin/gestor/envolvida. */
+export function listarHistoricoTarefa(id: string): Promise<TarefaHistorico[]> {
+  return apiFetch<TarefaHistorico[]>(`/tarefas/${id}/historico`);
+}
+
+/** Encaminhamento: move para outro setor e/ou colaborador e grava a linha `encaminhada`. */
+export function encaminharTarefa(
+  id: string,
+  dados: {
+    setorId?: string | null;
+    responsavelId?: string | null;
+    /** Recado em texto junto do encaminhamento (V12). */
+    mensagem?: string | null;
+    /** Arquivos anexados (V12): vão em multipart e param na pasta do servidor da API. */
+    anexos?: File[];
+  },
+): Promise<Tarefa> {
+  const form = new FormData();
+  if (dados.setorId) form.append("setorId", dados.setorId);
+  if (dados.responsavelId) form.append("responsavelId", dados.responsavelId);
+  if (dados.mensagem && dados.mensagem.trim()) form.append("mensagem", dados.mensagem.trim());
+  for (const arquivo of dados.anexos ?? []) form.append("anexos", arquivo);
+  // multipart: o navegador monta o Content-Type (http.ts já trata FormData)
+  return apiFetch<Tarefa>(`/tarefas/${id}/encaminhar`, { method: "POST", body: form });
+}
+
+/** Baixa um anexo da tarefa (o banco guarda só o caminho; os bytes ficam no servidor). */
+export function baixarAnexoTarefa(anexoId: string, nome: string): Promise<void> {
+  return baixarArquivo(`/tarefas/anexos/${anexoId}/conteudo`, nome);
 }

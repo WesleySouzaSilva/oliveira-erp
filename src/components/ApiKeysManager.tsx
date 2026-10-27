@@ -44,6 +44,8 @@ export function ApiKeysManager() {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [nome, setNome] = useState("");
   const [openCreate, setOpenCreate] = useState(false);
+  /** Edge function indisponível (deploy na API própria): em vez de toast de erro, aviso discreto. */
+  const [falha, setFalha] = useState(false);
   const { toast } = useToast();
 
   const load = async () => {
@@ -53,9 +55,12 @@ export function ApiKeysManager() {
     });
     setLoading(false);
     if (error) {
-      toast({ title: "Erro ao carregar chaves", description: error.message, variant: "destructive" });
+      // sem edge function não há o que listar — mostra um aviso no card, sem derrubar a tela
+      setFalha(true);
+      setKeys([]);
       return;
     }
+    setFalha(false);
     setKeys(data?.keys || []);
   };
 
@@ -148,8 +153,21 @@ export function ApiKeysManager() {
         ) : keys.length === 0 ? (
           <div className="text-center py-8 border border-dashed border-border rounded-lg">
             <Key className="w-8 h-8 text-muted-foreground mx-auto mb-2 opacity-40" />
-            <p className="text-sm text-muted-foreground">Nenhuma chave de API ativa.</p>
-            <p className="text-xs text-muted-foreground mt-1">Clique em "Nova chave" para começar.</p>
+            {falha ? (
+              <>
+                <p className="text-sm text-muted-foreground">Chaves de API indisponíveis no momento.</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  O serviço de chaves não respondeu — tente de novo mais tarde.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">Nenhuma chave de API ativa.</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Clique em "Nova chave" para começar.
+                </p>
+              </>
+            )}
           </div>
         ) : (
           keys.map((k) => (

@@ -1,7 +1,7 @@
 import { NavLink, Navigate, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  Banknote, Briefcase, Building2, ChevronDown, FileSignature, FolderTree, KeyRound, Landmark, Layers, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ScrollText, ShieldCheck, Tags, UserCog, Users, Waypoints, X,
+  Banknote, Briefcase, Building2, ChevronDown, FileSignature, FolderTree, KeyRound, Landmark, Layers, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Plug, ScrollText, ShieldCheck, Tags, UserCog, Users, Waypoints, X,
 } from "lucide-react";
 import { autenticadoApi, buscarUsuarioAtual, logoutApi, usuarioApi, type UsuarioApi } from "@/lib/api/http";
 import { useNotificacoes } from "@/hooks/useNotificacoes";
@@ -270,6 +270,9 @@ export default function LayoutErp() {
                 {itemMenu(<UserCog className="w-4 h-4" />, "Usuários", "/erp/usuarios")}
                 {itemMenu(<ShieldCheck className="w-4 h-4" />, "Permissões", "/erp/permissoes")}
                 {itemMenu(<ScrollText className="w-4 h-4" />, "Auditoria", "/erp/auditoria")}
+                {/* Integrações (26/10/2026): config da Invertexto (CEP/CNPJ) + consumo —
+                    destino do card que antes só existia em /configuracoes. */}
+                {itemMenu(<Plug className="w-4 h-4" />, "Integrações", "/erp/integracoes")}
               </>,
             )}
           {(usuario?.admin || usuario?.ceo) &&

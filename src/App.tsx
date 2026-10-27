@@ -51,6 +51,7 @@ const DadosClimaticos = lazyRetry(() => import("./pages/DadosClimaticos"));
 const Processos = lazyRetry(() => import("./pages/Processos"));
 const ProcessosSemCliente = lazyRetry(() => import("./pages/ProcessosSemCliente"));
 const Configuracoes = lazyRetry(() => import("./pages/Configuracoes"));
+const IntegracoesApi = lazyRetry(() => import("./pages/erp/Integracoes"));
 const Ajuda = lazyRetry(() => import("./pages/Ajuda"));
 const GuiaUso = lazyRetry(() => import("./pages/GuiaUso"));
 const Vencimentos = lazyRetry(() => import("./pages/Vencimentos"));
@@ -219,6 +220,7 @@ registrarRotas({
   "/erp/funcoes": FuncoesApi,
   "/erp/permissoes": PermissoesApi,
   "/erp/auditoria": AuditoriaApi,
+  "/erp/integracoes": IntegracoesApi,
   "/erp/codigos-tribunais": CodigosTribunaisApi,
   "/feed": Feed,
   "/rh": GestaoRH,
@@ -308,6 +310,7 @@ const App = () => (
               <Route path="funcoes" element={<FuncoesApi />} />
               <Route path="permissoes" element={<PermissoesApi />} />
               <Route path="auditoria" element={<AuditoriaApi />} />
+              <Route path="integracoes" element={<IntegracoesApi />} />
               <Route path="codigos-tribunais" element={<CodigosTribunaisApi />} />
               <Route path="objetos" element={<ObjetosApi />} />
               <Route path="sub-objetos" element={<SubObjetosApi />} />

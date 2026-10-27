@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Check, ChevronsUpDown, FileSignature, ListChecks, Pencil, Plus, Save, Search, Trash2, UserPlus, Users, X } from "lucide-react";
+import { Check, ChevronsUpDown, Building2, FileSignature, ListChecks, Pencil, Plus, Save, Search, Trash2, UserPlus, Users, X } from "lucide-react";
 import { ContratosClienteDialog } from "@/components/erp/ContratosClienteDialog";
 import { ContratosBancoClienteDialog } from "@/components/erp/ContratosBancoClienteDialog";
 import {
@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { ErroApi, mensagemDeErro } from "@/lib/api/http";
 import { listarCidades, listarEstados, semAcento, type Cidade, type Estado } from "@/lib/api/localidade";
+import { consultarCep, consultarCnpj } from "@/lib/api/integracoes";
 import { MaskedInput } from "@/components/ui/masked-input";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -490,6 +491,109 @@ export default function Clientes() {
         ibgeEstado: cidade ? codigoEstado : "",
       }),
     );
+  };
+
+  /**
+   * Preenche uma linha de endereço a partir de dados externos (CEP ou CNPJ), casando a
+   * cidade com o catálogo IBGE da UF para gravar os códigos — mesma régua do combobox.
+   */
+  const aplicarEnderecoNaLinha = async (
+    indice: number,
+    dados: { logradouro?: string | null; municipio?: string | null; uf?: string | null; cep?: string | null },
+  ) => {
+    const uf = (dados.uf ?? "").trim().toUpperCase();
+    const municipio = (dados.municipio ?? "").trim();
+    let cidades: Cidade[] = uf ? cidadesPorUf[uf] ?? [] : [];
+    if (uf && cidades.length === 0) {
+      try {
+        cidades = await listarCidades(uf);
+        setCidadesPorUf((atual) => ({ ...atual, [uf]: cidades }));
+      } catch {
+        cidades = [];
+      }
+    }
+    const cidade = municipio
+      ? cidades.find((item) => semAcento(item.nome) === semAcento(municipio))
+      : undefined;
+    const codigoEstado = estados.find((estado) => estado.uf === (cidade?.uf || uf))?.codigoIbge ?? "";
+    setEnderecos((atual) =>
+      mudarLinha(atual, indice, {
+        logradouro: dados.logradouro?.trim() || (atual[indice]?.logradouro ?? ""),
+        municipio: municipio || (atual[indice]?.municipio ?? ""),
+        uf: uf || (atual[indice]?.uf ?? ""),
+        ibgeCidade: cidade?.codigoIbge ?? "",
+        ibgeEstado: cidade ? codigoEstado : "",
+        cep: dados.cep?.trim() || (atual[indice]?.cep ?? ""),
+      }),
+    );
+  };
+
+  /** CEP completo (8 dígitos) → busca o endereço na Invertexto e preenche a linha. */
+  const preencherPorCep = async (indice: number, cep: string) => {
+    const digitos = cep.replace(/\D/g, "");
+    if (digitos.length !== 8) return; // ainda incompleto: não gasta requisição
+    try {
+      const dados = await consultarCep(digitos);
+      await aplicarEnderecoNaLinha(indice, {
+        logradouro: dados.logradouro,
+        municipio: dados.localidade,
+        uf: dados.uf,
+        cep: dados.cep ?? cep,
+      });
+    } catch (erro) {
+      toast.error(mensagemDeErro(erro));
+    }
+  };
+
+  /**
+   * CNPJ: grava o telefone e o e-mail da empresa na primeira linha VAZIA de cada bloco —
+   * nunca sobrescreve o que já foi digitado (27/10/2026).
+   */
+  const preencherContatoDaEmpresa = (telefone?: string | null, email?: string | null) => {
+    const fone = telefone?.trim();
+    if (fone) {
+      setTelefones((atual) => {
+        const vazio = atual.findIndex((linha) => !linha.numero.trim());
+        return vazio === -1 ? atual : mudarLinha(atual, vazio, { numero: fone });
+      });
+    }
+    const mail = email?.trim();
+    if (mail && EMAIL_VALIDO.test(mail)) {
+      setEmails((atual) => {
+        const vazio = atual.findIndex((linha) => !linha.email.trim());
+        return vazio === -1 ? atual : mudarLinha(atual, vazio, { email: mail });
+      });
+    }
+  };
+
+  /** CNPJ (14 dígitos) → preenche nome (razão social, se vazio), contato e endereço principal. */
+  const preencherPorCnpj = async () => {
+    const digitos = form.cpfCnpj.replace(/\D/g, "");
+    if (digitos.length !== 14) {
+      toast.error("Informe um CNPJ com 14 dígitos para buscar os dados da empresa.");
+      return;
+    }
+    try {
+      const dados = await consultarCnpj(digitos);
+      if (dados.razaoSocial && !form.nome.trim()) {
+        const razao = dados.razaoSocial;
+        setForm((atual) => ({ ...atual, nome: razao }));
+      }
+      preencherContatoDaEmpresa(dados.telefone, dados.email);
+      // endereço principal (ou a primeira linha quando nenhuma está marcada);
+      // o campo é texto livre "Rua, número, bairro", então os três vão juntos
+      const indice = Math.max(0, enderecos.findIndex((linha) => linha.principal));
+      const logradouro = [dados.logradouro, dados.numero, dados.bairro].filter(Boolean).join(", ").trim();
+      await aplicarEnderecoNaLinha(indice, {
+        logradouro,
+        municipio: dados.municipio,
+        uf: dados.uf,
+        cep: dados.cep,
+      });
+      toast.success("Dados da empresa preenchidos pelo CNPJ.");
+    } catch (erro) {
+      toast.error(mensagemDeErro(erro));
+    }
   };
 
   // Busca global + filtros de coluna com debounce de 300 ms — os dois valem juntos (E)
@@ -952,6 +1056,17 @@ export default function Clientes() {
                     placeholder="000.000.000-00"
                     required
                   />
+                  {/* Busca os dados da empresa pelo CNPJ (Invertexto): preenche razão social
+                      e endereço principal. Só para CNPJ (14 dígitos). */}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={preencherPorCnpj}
+                    className="w-full"
+                  >
+                    <Building2 className="w-3.5 h-3.5 mr-1" /> Buscar empresa (CNPJ)
+                  </Button>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground" htmlFor="cliente-rg">RG (opcional)</Label>
@@ -1103,6 +1218,7 @@ export default function Clientes() {
               <h3 className="text-sm font-semibold text-foreground">Endereços</h3>
               {enderecos.map((linha, indice) => (
                 <div key={linha.id ?? `endereco-${indice}`} className="rounded-lg border border-border/70 p-3 space-y-3">
+                  {/* Linha 1: Tipo + Principal ao lado do Tipo + remover (27/10/2026) */}
                   <div className="grid gap-3 sm:grid-cols-3 sm:items-end">
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground" htmlFor={`cliente-endereco-tipo-${indice}`}>
@@ -1119,19 +1235,7 @@ export default function Clientes() {
                         ))}
                       </select>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground" htmlFor={`cliente-endereco-cep-${indice}`}>
-                        CEP
-                      </Label>
-                      <MaskedInput
-                        id={`cliente-endereco-cep-${indice}`}
-                        mask="cep"
-                        value={linha.cep}
-                        onChange={(valor) => setEnderecos((atual) => mudarLinha(atual, indice, { cep: valor }))}
-                        placeholder="00000-000"
-                      />
-                    </div>
-                    <div className="flex items-center gap-3 pb-2.5 sm:justify-end">
+                    <div className="flex items-center gap-3 pb-2.5">
                       <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
                         <input
                           type="checkbox"
@@ -1141,6 +1245,8 @@ export default function Clientes() {
                         />
                         Principal
                       </label>
+                    </div>
+                    <div className="flex items-center justify-end pb-2.5">
                       <Button
                         type="button"
                         size="sm"
@@ -1152,6 +1258,35 @@ export default function Clientes() {
                       >
                         <X className="w-4 h-4" />
                       </Button>
+                    </div>
+                  </div>
+                  {/* Linha 2: CEP com o botão de busca AO LADO do campo (27/10/2026) */}
+                  <div className="grid gap-3 sm:grid-cols-3 sm:items-end">
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label className="text-xs text-muted-foreground" htmlFor={`cliente-endereco-cep-${indice}`}>
+                        CEP
+                      </Label>
+                      <div className="flex gap-2">
+                        <MaskedInput
+                          id={`cliente-endereco-cep-${indice}`}
+                          mask="cep"
+                          className="flex-1"
+                          value={linha.cep}
+                          onChange={(valor) => setEnderecos((atual) => mudarLinha(atual, indice, { cep: valor }))}
+                          placeholder="00000-000"
+                        />
+                        {/* Busca o endereço na Invertexto pelo CEP (cliente PF) — clique
+                            explícito (sem blur) para não gastar 2 requisições do contador. */}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => preencherPorCep(indice, linha.cep)}
+                          className="shrink-0"
+                        >
+                          <Search className="w-3.5 h-3.5 mr-1" /> Pesquisar CEP
+                        </Button>
+                      </div>
                     </div>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-3 sm:items-end">

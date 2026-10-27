@@ -3,6 +3,8 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Clientes from "@/pages/erp/Clientes";
 import { listarClientes } from "@/lib/api/clientes";
+import { listarCidades, listarEstados } from "@/lib/api/localidade";
+import { consultarCep, consultarCnpj } from "@/lib/api/integracoes";
 
 /**
  * Clientes — filtro por coluna (Correção 6): a listagem é paginada na API, então cada
@@ -47,6 +49,13 @@ vi.mock("@/lib/api/localidade", () => ({
   listarEstados: vi.fn(async () => []),
   listarCidades: vi.fn(async () => []),
   semAcento: (valor: string) => valor,
+}));
+
+// Auto-preenchimento por CEP/CNPJ (Invertexto): a chamada real vira mock — o form só
+// manda o CEP/CNPJ e a API devolve os dados.
+vi.mock("@/lib/api/integracoes", () => ({
+  consultarCep: vi.fn(),
+  consultarCnpj: vi.fn(),
 }));
 
 vi.mock("@/components/erp/ContratosClienteDialog", () => ({
@@ -175,5 +184,120 @@ describe("Clientes — filtro por coluna (Correção 6)", () => {
         ),
       { timeout: 3000 },
     );
+  });
+});
+
+describe("Clientes — auto-preenchimento por CEP/CNPJ (Invertexto)", () => {
+  it("preenche logradouro, município e UF pelo CEP ao sair do campo", async () => {
+    vi.mocked(listarEstados).mockResolvedValue([{ uf: "SP", codigoIbge: "35", nome: "São Paulo" }]);
+    vi.mocked(listarCidades).mockResolvedValue([
+      { nome: "São Paulo", uf: "SP", codigoIbge: "3550308" },
+    ]);
+    vi.mocked(consultarCep).mockResolvedValue({
+      cep: "01310-100",
+      logradouro: "Avenida Paulista",
+      bairro: "Bela Vista",
+      localidade: "São Paulo",
+      uf: "SP",
+    });
+    renderPagina();
+    await screen.findByText("Fazenda Santa Rita");
+
+    fireEvent.click(screen.getByRole("button", { name: /Novo Cliente/ }));
+    const cep = await screen.findByLabelText("CEP");
+    fireEvent.change(cep, { target: { value: "01310-100" } });
+    fireEvent.click(screen.getByRole("button", { name: /Pesquisar CEP/ }));
+
+    await waitFor(() => expect(consultarCep).toHaveBeenCalledWith("01310100"));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Logradouro *")).toHaveValue("Avenida Paulista"),
+    );
+    // cidade IBGE casada pelo catálogo (sem acento)
+    expect(screen.getByRole("combobox", { name: /Cidade/ })).toHaveTextContent("São Paulo");
+    expect(screen.getByLabelText("UF *")).toHaveValue("SP");
+  });
+
+  it("preenche razão social e endereço pelo CNPJ no botão Buscar empresa", async () => {
+    vi.mocked(listarEstados).mockResolvedValue([{ uf: "GO", codigoIbge: "52", nome: "Goiás" }]);
+    vi.mocked(listarCidades).mockResolvedValue([
+      { nome: "Rio Verde", uf: "GO", codigoIbge: "5218806" },
+    ]);
+    vi.mocked(consultarCnpj).mockResolvedValue({
+      cnpj: "12345678000190",
+      razaoSocial: "Agro Importadora Ltda",
+      situacao: "ATIVA",
+      logradouro: "Rua das Palmeiras",
+      numero: "1230",
+      bairro: "Centro",
+      municipio: "Rio Verde",
+      uf: "GO",
+      cep: "75900-000",
+      cnae: "4611-5",
+      capitalSocial: "100000",
+      telefone: "62 34939002",
+      email: "contato@agro.com.br",
+    });
+    renderPagina();
+    await screen.findByText("Fazenda Santa Rita");
+
+    fireEvent.click(screen.getByRole("button", { name: /Novo Cliente/ }));
+    const cnpj = await screen.findByLabelText("CPF/CNPJ *");
+    fireEvent.change(cnpj, { target: { value: "12.345.678/0001-90" } });
+    fireEvent.click(screen.getByRole("button", { name: /Buscar empresa/ }));
+
+    await waitFor(() => expect(consultarCnpj).toHaveBeenCalledWith("12345678000190"));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Nome do Cliente / Produtor *")).toHaveValue(
+        "Agro Importadora Ltda",
+      ),
+    );
+    // endereço principal preenchido (logradouro, número e bairro no campo livre,
+    // cidade e UF) — o JSON real da Invertexto traz tudo dentro de `endereco`
+    expect(screen.getByLabelText("Logradouro *")).toHaveValue("Rua das Palmeiras, 1230, Centro");
+    expect(screen.getByLabelText("UF *")).toHaveValue("GO");
+    // telefone e e-mail da empresa entram nas linhas vazias dos blocos
+    expect(screen.getByLabelText("Número *")).toHaveValue("(62) 3493-9002");
+    expect(screen.getByLabelText("E-mail *")).toHaveValue("contato@agro.com.br");
+  });
+
+  it("não sobrescreve telefone e e-mail que o usuário já digitou", async () => {
+    vi.mocked(listarEstados).mockResolvedValue([{ uf: "GO", codigoIbge: "52", nome: "Goiás" }]);
+    vi.mocked(listarCidades).mockResolvedValue([
+      { nome: "Rio Verde", uf: "GO", codigoIbge: "5218806" },
+    ]);
+    vi.mocked(consultarCnpj).mockResolvedValue({
+      cnpj: "12345678000190",
+      razaoSocial: "Agro Importadora Ltda",
+      situacao: "ATIVA",
+      logradouro: "Rua das Palmeiras",
+      numero: "1230",
+      bairro: "Centro",
+      municipio: "Rio Verde",
+      uf: "GO",
+      cep: "75900-000",
+      cnae: "4611-5",
+      capitalSocial: "100000",
+      telefone: "62 34939002",
+      email: "contato@agro.com.br",
+    });
+    renderPagina();
+    await screen.findByText("Fazenda Santa Rita");
+
+    fireEvent.click(screen.getByRole("button", { name: /Novo Cliente/ }));
+    const cnpj = await screen.findByLabelText("CPF/CNPJ *");
+    fireEvent.change(cnpj, { target: { value: "12.345.678/0001-90" } });
+    // o usuário já digitou contato antes de buscar a empresa
+    fireEvent.change(screen.getByLabelText("Número *"), { target: { value: "(64) 99999-8888" } });
+    fireEvent.change(screen.getByLabelText("E-mail *"), { target: { value: "user@agro.com" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /Buscar empresa/ }));
+    await waitFor(() => expect(consultarCnpj).toHaveBeenCalledWith("12345678000190"));
+
+    // o que estava digitado permanece
+    await waitFor(() =>
+      expect(screen.getByLabelText("Logradouro *")).toHaveValue("Rua das Palmeiras, 1230, Centro"),
+    );
+    expect(screen.getByLabelText("Número *")).toHaveValue("(64) 99999-8888");
+    expect(screen.getByLabelText("E-mail *")).toHaveValue("user@agro.com");
   });
 });

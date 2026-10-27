@@ -7,6 +7,7 @@ import { EditClientePerfilDialog } from "@/components/EditClientePerfilDialog";
 import { LaudoActionDialog } from "@/components/LaudoActionDialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -141,7 +142,6 @@ export default function ClienteDetalhe() {
   const [dataAtividade, setDataAtividade] = useState<Date>(new Date());
   const [novoBanco, setNovoBanco] = useState<string>("");
   const [anexosFiles, setAnexosFiles] = useState<File[]>([]);
-  const [dragOver, setDragOver] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [statusAtual, setStatusAtual] = useState("prospeccao");
 
@@ -1196,59 +1196,19 @@ export default function ClienteDetalhe() {
                 <span>{novaDescricao.length}/10000 caracteres</span>
               </div>
 
-              {/* Row 3: Drop zone (anexos múltiplos) */}
-              <div
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDragOver(false);
-                  const files = Array.from(e.dataTransfer.files);
-                  if (files.length) setAnexosFiles((prev) => [...prev, ...files]);
-                }}
-                onClick={() => {
-                  const input = document.createElement("input");
-                  input.type = "file";
-                  input.multiple = true;
-                  input.accept = ".pdf,.jpg,.jpeg,.png,.docx,.xlsx";
-                  input.onchange = (e) => {
-                    const fs = Array.from((e.target as HTMLInputElement).files || []);
-                    if (fs.length) setAnexosFiles((prev) => [...prev, ...fs]);
-                  };
-                  input.click();
-                }}
-                className={cn(
-                  "cursor-pointer flex flex-col items-center justify-center gap-1 px-4 py-6 rounded-lg border border-dashed text-sm transition-colors mb-3",
-                  dragOver
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-border text-muted-foreground hover:bg-secondary hover:text-foreground"
-                )}
-              >
-                <Paperclip className="w-5 h-5" />
-                <span>
-                  {dragOver ? "Solte os arquivos aqui" : "Arraste arquivos ou clique para anexar (múltiplos)"}
-                </span>
-              </div>
-
-              {anexosFiles.length > 0 && (
-                <div className="space-y-2 mb-3">
-                  {anexosFiles.map((file, idx) => (
-                    <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted text-sm">
-                      <Paperclip className="w-4 h-4 text-accent shrink-0" />
-                      <span className="truncate text-foreground flex-1 min-w-0">{file.name}</span>
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {(file.size / 1024).toFixed(0)} KB
-                      </span>
-                      <button
-                        onClick={() => setAnexosFiles((prev) => prev.filter((_, i) => i !== idx))}
-                        className="shrink-0 text-muted-foreground hover:text-destructive"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {/* Row 3: anexos múltiplos por clique OU arrastar (OE-13) */}
+              <CaixaAnexo
+                arquivos={anexosFiles}
+                accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx"
+                onAdicionar={(novos) => setAnexosFiles((prev) => [...prev, ...novos])}
+                onRemover={(indice) => setAnexosFiles((prev) => prev.filter((_, i) => i !== indice))}
+                rotulo={
+                  <p className="text-sm font-medium text-foreground">
+                    Arraste os arquivos aqui ou clique para anexar (múltiplos)
+                  </p>
+                }
+                className="mb-3"
+              />
 
               <div className="flex items-center justify-end">
                 <button
@@ -1412,20 +1372,20 @@ export default function ClienteDetalhe() {
                                       ))}
                                     </div>
                                   )}
-                                  <label className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline cursor-pointer w-fit">
-                                    <Paperclip className="w-3.5 h-3.5" />
-                                    Anexar arquivo
-                                    <input
-                                      type="file"
-                                      multiple
-                                      className="hidden"
-                                      onChange={(e) => {
-                                        const files = Array.from(e.target.files || []);
-                                        if (files.length) setEditAnexosFiles((p) => [...p, ...files]);
-                                        e.target.value = "";
-                                      }}
-                                    />
-                                  </label>
+                                  <CaixaAnexo
+                                    compacta
+                                    arquivos={editAnexosFiles}
+                                    onAdicionar={(novos) => setEditAnexosFiles((p) => [...p, ...novos])}
+                                    onRemover={(indice) =>
+                                      setEditAnexosFiles((p) => p.filter((_, i) => i !== indice))
+                                    }
+                                    rotulo={
+                                      <p className="text-xs text-muted-foreground">
+                                        Arraste os arquivos aqui ou clique para anexar
+                                      </p>
+                                    }
+                                    className="w-fit"
+                                  />
                                   <div className="flex items-center gap-2">
                                     <Button size="sm" onClick={() => handleEditSave(a.id)} disabled={editSaving} className="h-7 text-xs gap-1">
                                       <Check className="w-3 h-3" /> {editSaving ? "Salvando..." : "Salvar"}

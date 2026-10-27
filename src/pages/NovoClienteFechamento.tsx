@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/AppLayout";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -10,7 +11,7 @@ import { MaskedInput } from "@/components/ui/masked-input";
 import { Badge } from "@/components/ui/badge";
 import {
   HandCoins, Plus, Trash2, UserPlus, AlertTriangle,
-  Sparkles, Loader2, UploadCloud, CheckCircle2, XCircle, FileUp,
+  Sparkles, Loader2, CheckCircle2, XCircle,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -110,8 +111,6 @@ export default function NovoClienteFechamento() {
   type FilaItem = { id: string; nome: string; status: "fila" | "lendo" | "ok" | "erro"; resumo?: string };
   const [fila, setFila] = useState<FilaItem[]>([]);
   const [lendoIA, setLendoIA] = useState(false);
-  const [arrastando, setArrastando] = useState(false);
-  const loteInputRef = useRef<HTMLInputElement>(null);
   const titularesRef = useRef(titulares);
   titularesRef.current = titulares;
 
@@ -797,49 +796,27 @@ export default function NovoClienteFechamento() {
             </Button>
           </div>
 
-          {/* Leitura automática: arraste 1 arquivo ou vários (lote). */}
-          <div
-            onDragOver={(e) => { e.preventDefault(); setArrastando(true); }}
-            onDragLeave={() => setArrastando(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setArrastando(false);
-              lerArquivos(Array.from(e.dataTransfer.files || []));
-            }}
-            className={`mb-4 rounded-lg border-2 border-dashed p-5 text-center transition-colors ${
-              arrastando ? "border-primary bg-primary/10" : "border-primary/40 bg-primary/5"
-            }`}
-          >
-            <UploadCloud className="mx-auto mb-2 h-6 w-6 text-primary" />
-            <p className="text-sm font-medium">Arraste contratos, extratos ou prints aqui</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              PDF, JPG ou PNG — um arquivo ou vários de uma vez. A IA preenche banco, número, valor e vencimento.
-            </p>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="mt-3"
-              disabled={lendoIA}
-              onClick={() => loteInputRef.current?.click()}
-            >
-              {lendoIA ? (
-                <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Lendo documentos...</>
-              ) : (
-                <><FileUp className="mr-1 h-4 w-4" /> Selecionar arquivos em lote</>
-              )}
-            </Button>
-            <input
-              ref={loteInputRef}
-              type="file"
-              multiple
-              accept={ACCEPT_ARQUIVOS}
-              className="hidden"
-              onChange={(e) => {
-                lerArquivos(Array.from(e.target.files || []));
-                e.target.value = "";
-              }}
-            />
+          {/* Leitura automática: clique OU arraste 1 arquivo ou vários (lote) — OE-13. */}
+          <CaixaAnexo
+            arquivos={[]}
+            accept={ACCEPT_ARQUIVOS}
+            desabilitado={lendoIA}
+            onAdicionar={(novos) => lerArquivos(novos)}
+            rotulo={
+              <>
+                <p className="text-sm font-medium">Arraste contratos, extratos ou prints aqui</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  PDF, JPG ou PNG — um arquivo ou vários de uma vez. A IA preenche banco, número, valor e vencimento.
+                </p>
+                {lendoIA && (
+                  <p className="mt-2 text-xs font-medium text-primary inline-flex items-center gap-1">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Lendo documentos...
+                  </p>
+                )}
+              </>
+            }
+            className="mb-4"
+          />
             {fila.length > 0 && (
               <ul className="mt-4 space-y-1.5 text-left">
                 {fila.map((f) => (
@@ -865,7 +842,6 @@ export default function NovoClienteFechamento() {
                 ))}
               </ul>
             )}
-          </div>
 
           <div className="space-y-4">
             {operacoes.map((o, i) => {
@@ -944,16 +920,26 @@ export default function NovoClienteFechamento() {
                     <div className="sm:col-span-2">
                       <Label htmlFor={`cedula-${o.id}`}>Cédula (opcional)</Label>
                       <div className="mt-1.5 flex flex-col gap-2 sm:flex-row sm:items-center">
-                        <Input
-                          id={`cedula-${o.id}`}
-                          type="file"
+                        {/* Anexar por clique OU arrastar (OE-13); validarArquivo continua no caminho. */}
+                        <CaixaAnexo
+                          compacta
+                          multiple={false}
                           accept="application/pdf,image/jpeg,image/png,image/webp"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0] ?? null;
-                            const err = f ? validarArquivo(f) : null;
-                            if (err) { toast.error(err); e.target.value = ""; return; }
+                          arquivos={o.cedula ? [o.cedula] : []}
+                          onArquivosChange={(lista) => {
+                            const f = lista[lista.length - 1] ?? null;
+                            if (f) {
+                              const err = validarArquivo(f);
+                              if (err) { toast.error(err); return; }
+                            }
                             upOperacao(o.id, "cedula", f);
                           }}
+                          rotulo={
+                            <p className="text-xs text-muted-foreground">
+                              Arraste a cédula aqui ou clique para selecionar
+                            </p>
+                          }
+                          className="flex-1"
                         />
                         <Button
                           type="button"
@@ -966,11 +952,6 @@ export default function NovoClienteFechamento() {
                           <Sparkles className="mr-1 h-4 w-4" /> Ler com IA
                         </Button>
                       </div>
-                      {o.cedula && (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Arquivo anexado: {o.cedula.name}
-                        </p>
-                      )}
                     </div>
 
                   </div>

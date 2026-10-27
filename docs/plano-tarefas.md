@@ -227,35 +227,29 @@ Provider + botão no topo do `LayoutErp`, persistido — vale para **todas** as 
    `api.storage.provedor` e a raiz por `api.storage.raiz`; mudou a config e reiniciou a
    API. O banco guarda só o caminho relativo, então trocar de provedor não migra dado.
 
-**Fase C — API: modelo + vínculos + histórico**
-- [ ] C1. Migração V8: `contrato_id`, `data_compromisso`, `prazo_fatal`, `importante`,
-      `lido`, `privada`, `tarefa_futura`, `etapa` + índices + DTO + filtros.
-- [ ] C2. `GET /tarefas/{id}/historico` + estados.
-- [ ] C3. Anexos e interações da tarefa (`arquivos_cliente.tarefa_id`, `tarefa_interacoes`).
-- [ ] C4. Ao criar contrato: 4 tarefas de setor + encaminhar/notificar por setor.
-- [ ] C5. Distribuição por carga (menos tarefas + rodízio) no encaminhar.
-- [ ] C6. Config da área (`setores.distribuicao`) + gestor (líder do setor).
-- [ ] C7. Carteira por faixa de valor (`contratos_cliente.valor` + faixas).
-- [ ] C8. Notificações in-app de tarefa.
-- [ ] C9. Histórico de responsáveis/encaminhamentos (`tarefa_responsaveis`).
-- [ ] C10. Testes de integração (campos, histórico, distribuição, notificações).
+**Onde está hoje (20/10/2026)**
 
-**Fase G — Front: Tarefas**
-- [ ] G0. Tema claro/escuro global.
-- [ ] G1. Quadro/aba Lista (colunas + paginação).
-- [ ] G2. Quadro/topo: cards de visão geral.
-- [ ] G3. Quadro/cabeçalho: Buscar/Filtrar/Ordenar/Exportar.
-- [ ] G4. Quadro/aba Calendário interativo.
-- [ ] G5. Quadro/aba Kanban.
-- [ ] G6. Detalhe/edição da tarefa.
-- [ ] G7. Timeline da tarefa/contrato.
-- [ ] G8. Encaminhar (mostrando a carga de cada um, com troca manual) + controle por
-      colaborador + config da área + notificações na tela.
+Entregue (API PR **#10** + front PR **#9**):
 
-**Fases seguintes:** D (Contratos do cliente no front), E (Colaboradores),
-F (módulo Processo — andamentos/intimações na timeline).
+- [x] Campos do ADVBOX na tarefa (`V8`): duas datas, marcadores, etapa e contrato
+- [x] `GET /tarefas/{id}/historico` com gate (admin/ceo, responsável, criador ou gestor)
+- [x] Trilha completa (`V11`): criada, editada com o diff, encaminhada com de/para, concluída
+      e reaberta — sempre com o IP do PC
+- [x] Encaminhar (JSON e multipart) com recado e anexos (`V12`), distribuição pela menor
+      carga com rodízio e faixa de valor por setor
+- [x] Notificações in-app de tarefa (`V15`)
+- [x] Front: Lista, Kanban e Calendário, KPIs, nova tarefa reduzida, janela central com a
+      trilha, encaminhar com setor/pessoa/anexos e o campo "Última movimentação"
 
----
+Fora desta etapa (não solicitado — registrado para retomar se o titular pedir):
+
+- anexos/interações da tarefa como linha própria de trilha (hoje entram na ação `encaminhada`);
+- `tarefa_responsaveis` (histórico de todos os responsáveis, além do de/para da trilha);
+- configuração de área por setor (`setores.distribuicao`) e gestor de área como líder;
+- carteira de clientes por faixa de valor (a faixa de valor por usuário será aprovada numa
+  próxima etapa — ver `plano-contratos-e-timeline.md` §8);
+- tema claro/escuro global, exportar e a aba **Histórico** com o feed agregado do escritório
+  (a trilha por tarefa já existe; o feed agregado depende de `GET /tarefas/movimentacoes`).
 
 ## 8. Decisões
 

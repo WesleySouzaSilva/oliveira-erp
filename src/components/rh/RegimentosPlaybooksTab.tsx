@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useOrgMembers } from "@/hooks/useOrgMembers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -277,7 +278,18 @@ export function RegimentosPlaybooksTab() {
             </div>
             <div>
               <Label>Arquivo (PDF, DOCX...) *</Label>
-              <Input type="file" onChange={e => setFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.xlsx,.ppt,.pptx" />
+              {/* Anexar por clique OU arrastar (OE-13); o envio continua no "Publicar". */}
+              <CaixaAnexo
+                multiple={false}
+                accept=".pdf,.doc,.docx,.xlsx,.ppt,.pptx"
+                arquivos={file ? [file] : []}
+                onArquivosChange={(lista) => setFile(lista[lista.length - 1] || null)}
+                rotulo={
+                  <p className="text-xs font-medium text-foreground">
+                    Arraste o arquivo aqui ou clique para selecionar
+                  </p>
+                }
+              />
             </div>
           </div>
           <DialogFooter>

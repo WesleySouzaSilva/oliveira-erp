@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
@@ -143,10 +144,17 @@ export function EncerramentoComunicadoSection({
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">Arquivo do comunicado</Label>
-                  <Input
-                    type="file"
-                    disabled={enviando}
-                    onChange={(e) => e.target.files?.[0] && subir(e.target.files[0])}
+                  {/* Anexar por clique OU arrastar (OE-13); subir() continua enviando na hora. */}
+                  <CaixaAnexo
+                    multiple={false}
+                    arquivos={[]}
+                    desabilitado={enviando}
+                    onAdicionar={(novos) => novos[0] && subir(novos[0])}
+                    rotulo={
+                      <p className="text-xs font-medium text-foreground">
+                        {enviando ? "Enviando..." : "Arraste o arquivo aqui ou clique para selecionar"}
+                      </p>
+                    }
                   />
                   {valor.arquivo && (
                     <p className="mt-1 text-[11px] text-emerald-700">Anexado: {valor.arquivo.split("/").pop()}</p>

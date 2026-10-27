@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
-import { Save, Sparkles, Loader2, FileUp } from "lucide-react";
+import { useState } from "react";
+import { Save, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -41,7 +42,6 @@ export function VencimentoFormDialog({
   onSave,
   saving,
 }: Props) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [iaLoading, setIaLoading] = useState(false);
   const [iaPreenchido, setIaPreenchido] = useState(false);
 
@@ -100,7 +100,6 @@ export function VencimentoFormDialog({
       });
     } finally {
       setIaLoading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -118,30 +117,19 @@ export function VencimentoFormDialog({
                   <Sparkles className="w-4 h-4 text-primary" />
                   <span className="font-medium">Ler contrato com IA</span>
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={iaLoading}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {iaLoading ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" /> Lendo...</>
-                  ) : (
-                    <><FileUp className="w-4 h-4" /> Enviar PDF/foto</>
-                  )}
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="application/pdf,image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleLerContrato(f);
-                  }}
-                />
               </div>
+              {/* Lê o contrato por clique OU arrastando o PDF/foto até aqui (OE-13). */}
+              <CaixaAnexo
+                multiple={false}
+                accept="application/pdf,image/jpeg,image/png,image/webp"
+                desabilitado={iaLoading}
+                onAdicionar={(novos) => novos[0] && handleLerContrato(novos[0])}
+                rotulo={
+                  <p className="text-sm font-medium text-foreground">
+                    {iaLoading ? "Lendo..." : "Arraste o PDF ou foto aqui ou clique para selecionar"}
+                  </p>
+                }
+              />
               <p className="text-xs text-muted-foreground">
                 Envie o PDF ou foto do contrato. A IA preenche os campos vazios para você revisar — nada é salvo automaticamente.
               </p>

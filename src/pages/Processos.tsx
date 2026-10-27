@@ -15,10 +15,7 @@ import {
   Edit2,
   Trash2,
   MoreVertical,
-  Upload,
   ArrowRightLeft,
-  FileText,
-  X,
   Users,
   Loader2,
   Building2,
@@ -31,6 +28,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { KanbanPipeline } from "@/components/KanbanPipeline";
 import { ListSkeleton } from "@/components/ui/loaders";
 import { Button } from "@/components/ui/button";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -1147,57 +1145,30 @@ export default function Processos() {
 
                 {laudoSource === "external" && (
                   <div className="space-y-2">
-                    <div
-                      className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-accent/50 transition-colors cursor-pointer"
-                      onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-accent", "bg-accent/5"); }}
-                      onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove("border-accent", "bg-accent/5"); }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        e.currentTarget.classList.remove("border-accent", "bg-accent/5");
-                        const droppedFiles = Array.from(e.dataTransfer.files).filter(f => f.type === "application/pdf");
-                        if (droppedFiles.length > 0) {
-                          setExternalPdfFiles(prev => [...prev, ...droppedFiles]);
-                        }
-                      }}
-                      onClick={() => {
-                        const input = document.createElement("input");
-                        input.type = "file";
-                        input.accept = ".pdf";
-                        input.multiple = true;
-                        input.onchange = () => {
-                          if (input.files) {
-                            setExternalPdfFiles(prev => [...prev, ...Array.from(input.files!)]);
-                          }
-                        };
-                        input.click();
-                      }}
-                    >
-                      <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                      <p className="text-sm font-medium">Arraste vários PDFs aqui ou clique para selecionar</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Você pode anexar quantos arquivos quiser (Laudo de Perda de Safra, Capacidade de Pagamento, anexos, etc.)
-                      </p>
-                    </div>
+                    {/* PDFs externos por clique OU arrastar (OE-13) — só PDF, como antes. */}
+                    <CaixaAnexo
+                      arquivos={externalPdfFiles}
+                      accept=".pdf,application/pdf"
+                      onAdicionar={(novos) =>
+                        setExternalPdfFiles((prev) => [
+                          ...prev,
+                          ...novos.filter((f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")),
+                        ])
+                      }
+                      onRemover={(indice) =>
+                        setExternalPdfFiles((prev) => prev.filter((_, i) => i !== indice))
+                      }
+                      rotulo={
+                        <>
+                          <p className="text-sm font-medium">Arraste vários PDFs aqui ou clique para selecionar</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Você pode anexar quantos arquivos quiser (Laudo de Perda de Safra, Capacidade de Pagamento, anexos, etc.)
+                          </p>
+                        </>
+                      }
+                    />
                     {externalPdfFiles.length > 0 && (
-                      <div className="space-y-1.5">
-                        {externalPdfFiles.map((file, idx) => (
-                          <div key={idx} className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                              <span className="text-sm truncate">{file.name}</span>
-                              <span className="text-xs text-muted-foreground flex-shrink-0">({(file.size / 1024).toFixed(0)} KB)</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); setExternalPdfFiles(prev => prev.filter((_, i) => i !== idx)); }}
-                              className="text-muted-foreground hover:text-destructive transition-colors"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ))}
-                        <p className="text-xs text-success">✓ O processo começará na Fase 2 com {externalPdfFiles.length} laudo(s) externo(s) anexado(s).</p>
-                      </div>
+                      <p className="text-xs text-success">✓ O processo começará na Fase 2 com {externalPdfFiles.length} laudo(s) externo(s) anexado(s).</p>
                     )}
                   </div>
                 )}

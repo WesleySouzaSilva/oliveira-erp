@@ -1,8 +1,9 @@
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Circle, Eye, EyeOff, Lock, Star } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, History, Lock, X } from "lucide-react";
 import type { Tarefa } from "@/lib/api/tarefas";
-
-/** Coluna do marcador: clique troca na hora (otimista) e volta se a API negar. */
-type Marcador = "importante" | "urgente" | "lido";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { corDePrioridade } from "@/lib/prioridade";
 
 export interface TabelaTarefasProps {
   /** O conjunto carregado; a pagina e so recorte em memoria (a carga traz ate 200). */
@@ -12,14 +13,18 @@ export interface TabelaTarefasProps {
   onPagina: (pagina: number) => void;
   onPorPagina: (quantidade: number) => void;
   onAbrir: (tarefa: Tarefa) => void;
-  onAlternar: (tarefa: Tarefa, concluida: boolean) => void;
-  onMarcar: (tarefa: Tarefa, campo: Marcador, valor: boolean) => void;
+  /**
+   * Botão "Histórico" da linha: abre a JANELA CENTRAL grande com a timeline inteira da
+   * tarefa (quem criou/recebeu/encaminhou, recados e anexos).
+   */
+  onHistorico: (tarefa: Tarefa) => void;
   nomeDeResponsavel: (userId: string) => string;
 }
 
 const HOJE = new Date().toISOString().split("T")[0];
 
 const dataBr = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("pt-BR");
+
 
 /** "2026-10-13T10:30:00Z" -> "13/10/2026 07:30" (ou o horario local). */
 function compromissoBr(iso: string): string {
@@ -29,20 +34,163 @@ function compromissoBr(iso: string): string {
 }
 
 /**
- * Lista de tarefas no padrão ADVBOX (`docs/exemplo-detalhado-tarefa.html`): uma tabela
- * com os quatro marcadores clicaveis (Resolvido, Importante, Urgente, Lido), o titulo
- * com o cliente, as DUAS datas (Data compromisso e Prazo fatal), o responsavel e
- * paginacao — em vez de secoes ou cards.
+ * Filtro por coluna (Correção 6, 22/10/2026) — LOCAL: `tarefas` já é um recorte de até
+ * 200 itens carregado na tela, então filtrar em memória é instantâneo e não mexe na API.
  *
- * A linha inteira abre o drawer de detalhe; os marcadores param a propagacao para nao
- * abrir junto. Linha atrasada ganha o fundo vermelho, como o `.late` do legado.
+ * Cada campo casa com o TEXTO DA CÉLULA (mais o valor cru, para colar o ISO), sem
+ * diferenciar maiúsculas de minúsculas, e todos valem juntos (E) — junto com a busca de
+ * texto, o chip do dia do calendário e o card-filtro, que já chegam aplicados em
+ * `tarefas`. Cada coluna tem o seu (x) de limpar.
+ *
+ * A coluna "Tarefa" traz tipo, descrição, setor e contrato na mesma célula, e por ela
+ * também se filtra o processo: não há coluna própria até o módulo de processos existir
+ * (D5 do plano) — colar o UUID acha a linha.
+ */
+const FILTROS = [
+  { campo: "tarefa", rotulo: "Tarefa", placeholder: "Tipo, descrição...", largura: "w-36" },
+  { campo: "cliente", rotulo: "Cliente", placeholder: "Cliente...", largura: "w-32" },
+  { campo: "prioridade", rotulo: "Prioridade", placeholder: "Prioridade...", largura: "w-24" },
+  { campo: "compromisso", rotulo: "Data compromisso", placeholder: "dd/mm/aaaa", largura: "w-32" },
+  { campo: "prazoFatal", rotulo: "Prazo fatal", placeholder: "dd/mm/aaaa", largura: "w-32" },
+  { campo: "responsavel", rotulo: "Responsável", placeholder: "Responsável...", largura: "w-32" },
+] as const;
+
+type CampoFiltro = (typeof FILTROS)[number]["campo"];
+type FiltrosColuna = Record<CampoFiltro, string>;
+
+const FILTROS_VAZIOS: FiltrosColuna = {
+  tarefa: "",
+  cliente: "",
+  prioridade: "",
+  compromisso: "",
+  prazoFatal: "",
+  responsavel: "",
+};
+
+/** Texto da célula da coluna (o que a linha mostra + o valor cru) para o `.includes`. */
+function textoDaColuna(
+  campo: CampoFiltro,
+  tarefa: Tarefa,
+  nomeDeResponsavel: (userId: string) => string,
+): string {
+  switch (campo) {
+    case "tarefa":
+      return [
+        tarefa.titulo,
+        tarefa.descricao,
+        tarefa.tipoNome,
+        tarefa.setorNome,
+        tarefa.contratoNumero,
+        tarefa.processoId,
+      ]
+        .filter(Boolean)
+        .join(" ");
+    case "cliente":
+      return tarefa.nomeCliente ?? "";
+    case "prioridade":
+      return tarefa.prioridade ?? "";
+    case "compromisso":
+      // a célula mostra data + hora; o ISO cru também serve para colar
+      return tarefa.dataCompromisso
+        ? `${compromissoBr(tarefa.dataCompromisso)} ${tarefa.dataCompromisso}`
+        : "";
+    case "prazoFatal": {
+      // mesma regra da célula: prazo fatal, ou o vencimento quando não há (D6)
+      const prazo = tarefa.prazoFatal ?? tarefa.dataVencimento;
+      return `${dataBr(prazo)} ${prazo}`;
+    }
+    case "responsavel":
+      return nomeDeResponsavel(tarefa.responsavelId);
+    default:
+      return "";
+  }
+}
+
+/** Input pequeno + (x) de limpar — montado dentro de cada `<th>`. */
+function InputColuna({
+  campo,
+  filtros,
+  aoMudar,
+}: {
+  campo: CampoFiltro;
+  filtros: FiltrosColuna;
+  aoMudar: (campo: CampoFiltro, valor: string) => void;
+}) {
+  const config = FILTROS.find((item) => item.campo === campo);
+  if (!config) return null;
+  const valor = filtros[campo];
+  return (
+    <div className="mt-1.5 flex items-center gap-1">
+      <Input
+        value={valor}
+        onChange={(evento) => aoMudar(campo, evento.target.value)}
+        placeholder={config.placeholder}
+        aria-label={`Filtrar por ${config.rotulo}`}
+        // `normal-case`: o `<tr>` do cabeçalho deixa tudo em caixa alta e o texto
+        // digitado no input não deve herdar isso
+        className={`h-7 px-2 text-xs normal-case ${config.largura}`}
+      />
+      {valor !== "" && (
+        <button
+          type="button"
+          onClick={() => aoMudar(campo, "")}
+          aria-label={`Limpar filtro de ${config.rotulo}`}
+          title={`Limpar filtro de ${config.rotulo}`}
+          className="shrink-0 w-5 h-5 inline-grid place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Lista de tarefas no padrão ADVBOX, atualizada em 16/10/2026 (pedido do titular):
+ *
+ * - os quatro marcadores antigos (OK, Importante, Urgente, Lido) SAIRAM — o OK virou o
+ *   campo **Status** (Aberta/Concluída) no detalhe, e Importante/Urgente/Lido não existem
+ *   mais;
+ * - Prioridade virou CAMPO DE TEXTO (ex.: "Alta", "Baixa") — coluna própria;
+ * - coluna Tarefa enxuta (base 1366x768) para o botão Histórico ficar visível sem rolar;
+ * - filtro por coluna embaixo de cada cabeçalho (Correção 6) — local, em memória.
+ *
+ * A linha inteira abre a janela central de detalhe; linha atrasada ganha fundo vermelho.
  */
 export function TabelaTarefas({
-  tarefas, pagina, porPagina, onPagina, onPorPagina, onAbrir, onAlternar, onMarcar, nomeDeResponsavel,
+  tarefas, pagina, porPagina, onPagina, onPorPagina, onAbrir, onHistorico, nomeDeResponsavel,
 }: TabelaTarefasProps) {
+  /** Filtro por coluna (local, Correção 6) — vê FILTROS acima. */
+  const [filtros, setFiltros] = useState<FiltrosColuna>(FILTROS_VAZIOS);
+
+  const mudarFiltro = (campo: CampoFiltro, valor: string) =>
+    setFiltros((atual) => ({ ...atual, [campo]: valor }));
+
+  // Filtro mudou? Volta para a primeira página — senão o recorte pode cair numa
+  // página que os itens filtrados não alcançam mais.
+  useEffect(() => {
+    onPagina(0);
+  }, [filtros, onPagina]);
+
+  const filtradas = useMemo(
+    () =>
+      tarefas.filter((tarefa) =>
+        FILTROS.every(({ campo }) => {
+          const termo = filtros[campo].trim().toLowerCase();
+          if (!termo) return true;
+          return textoDaColuna(campo, tarefa, nomeDeResponsavel)
+            .toLowerCase()
+            .includes(termo);
+        }),
+      ),
+    // `nomeDeResponsavel` vem inline da tela e muda a cada render — inócuo (lista curta)
+    [tarefas, filtros, nomeDeResponsavel],
+  );
+
+  const filtrando = FILTROS.some(({ campo }) => filtros[campo].trim() !== "");
   const inicio = pagina * porPagina;
-  const visiveis = tarefas.slice(inicio, inicio + porPagina);
-  const total = tarefas.length;
+  const visiveis = filtradas.slice(inicio, inicio + porPagina);
+  const total = filtradas.length;
   const ultima = Math.max(0, Math.ceil(total / porPagina) - 1);
   const de = total === 0 ? 0 : inicio + 1;
   const ate = Math.min(inicio + porPagina, total);
@@ -53,15 +201,42 @@ export function TabelaTarefas({
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="bg-secondary/60 text-xs uppercase tracking-wide text-muted-foreground">
-              <th className="px-3 py-2.5 text-left w-10" title="Resolvido">OK</th>
-              <th className="px-3 py-2.5 text-left w-12" title="Importante">Imp</th>
-              <th className="px-3 py-2.5 text-left w-14" title="Urgente">Urg</th>
-              <th className="px-3 py-2.5 text-left w-12" title="Lido">Lido</th>
-              <th className="px-3 py-2.5 text-left">Tarefa</th>
-              <th className="px-3 py-2.5 text-left">Cliente</th>
-              <th className="px-3 py-2.5 text-left whitespace-nowrap">Data compromisso</th>
-              <th className="px-3 py-2.5 text-left whitespace-nowrap">Prazo fatal</th>
-              <th className="px-3 py-2.5 text-left">Responsável</th>
+              <th className="px-3 py-2.5 text-left align-bottom">
+                Status
+                {/* respiro para a linha de filtros alinhar os rótulos das colunas */}
+                <div className="mt-1.5 h-7" aria-hidden="true" />
+              </th>
+              {/* Input de filtro embaixo de cada coluna (Correção 6) — local, em
+                  memória; os de Status e Histórico ficam de fora: Status já tem os
+                  cards-filtro e Histórico é ação de linha. */}
+              <th className="px-3 py-2.5 text-left align-bottom">
+                Tarefa
+                <InputColuna campo="tarefa" filtros={filtros} aoMudar={mudarFiltro} />
+              </th>
+              <th className="px-3 py-2.5 text-left align-bottom">
+                Cliente
+                <InputColuna campo="cliente" filtros={filtros} aoMudar={mudarFiltro} />
+              </th>
+              <th className="px-3 py-2.5 text-left align-bottom">
+                Prioridade
+                <InputColuna campo="prioridade" filtros={filtros} aoMudar={mudarFiltro} />
+              </th>
+              <th className="px-3 py-2.5 text-left align-bottom whitespace-nowrap">
+                Data compromisso
+                <InputColuna campo="compromisso" filtros={filtros} aoMudar={mudarFiltro} />
+              </th>
+              <th className="px-3 py-2.5 text-left align-bottom whitespace-nowrap">
+                Prazo fatal
+                <InputColuna campo="prazoFatal" filtros={filtros} aoMudar={mudarFiltro} />
+              </th>
+              <th className="px-3 py-2.5 text-left align-bottom">
+                Responsável
+                <InputColuna campo="responsavel" filtros={filtros} aoMudar={mudarFiltro} />
+              </th>
+              <th className="px-3 py-2.5 text-left align-bottom">
+                Histórico
+                <div className="mt-1.5 h-7" aria-hidden="true" />
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -69,7 +244,6 @@ export function TabelaTarefas({
               const prazoFatal = tarefa.prazoFatal ?? tarefa.dataVencimento;
               const atrasada = !tarefa.concluida && prazoFatal < HOJE;
               const hoje = !tarefa.concluida && prazoFatal === HOJE;
-              const urgente = tarefa.prioridade === "urgente";
               return (
                 <tr
                   key={tarefa.id}
@@ -78,64 +252,15 @@ export function TabelaTarefas({
                     atrasada ? "bg-destructive/5" : ""
                   } ${tarefa.concluida ? "opacity-70" : ""}`}
                 >
-                  <td className="px-3 py-2.5" title={tarefa.concluida ? "Reabrir tarefa" : "Marcar como resolvida"}>
-                    <button
-                      type="button"
-                      onClick={(evento) => { evento.stopPropagation(); onAlternar(tarefa, !tarefa.concluida); }}
-                      aria-label={tarefa.concluida ? "Reabrir tarefa" : "Marcar como resolvida"}
-                      className="shrink-0"
-                    >
-                      {tarefa.concluida ? (
-                        <CheckCircle2 className="w-4 h-4 text-success" />
-                      ) : (
-                        <Circle className="w-4 h-4 text-muted-foreground hover:text-accent transition-colors" />
-                      )}
-                    </button>
+                  <td className="px-3 py-2.5">
+                    <Badge variant={tarefa.concluida ? "outline" : "secondary"}>
+                      {tarefa.concluida ? "Concluída" : "Aberta"}
+                    </Badge>
                   </td>
 
-                  <td className="px-3 py-2.5" title={tarefa.importante ? "Importante" : "Marcar como importante"}>
-                    <button
-                      type="button"
-                      onClick={(evento) => { evento.stopPropagation(); onMarcar(tarefa, "importante", !tarefa.importante); }}
-                      aria-label="Importante"
-                    >
-                      <Star
-                        className={`w-4 h-4 transition-colors ${
-                          tarefa.importante ? "text-warning fill-warning" : "text-muted-foreground hover:text-warning"
-                        }`}
-                      />
-                    </button>
-                  </td>
-
-                  <td className="px-3 py-2.5" title={urgente ? "Urgente" : "Marcar como urgente"}>
-                    <button
-                      type="button"
-                      onClick={(evento) => { evento.stopPropagation(); onMarcar(tarefa, "urgente", !urgente); }}
-                      aria-label="Urgente"
-                    >
-                      <AlertTriangle
-                        className={`w-4 h-4 transition-colors ${
-                          urgente ? "text-destructive" : "text-muted-foreground hover:text-destructive"
-                        }`}
-                      />
-                    </button>
-                  </td>
-
-                  <td className="px-3 py-2.5" title={tarefa.lido ? "Nao lida" : "Marcar como lida"}>
-                    <button
-                      type="button"
-                      onClick={(evento) => { evento.stopPropagation(); onMarcar(tarefa, "lido", !tarefa.lido); }}
-                      aria-label="Lido"
-                    >
-                      {tarefa.lido ? (
-                        <Eye className="w-4 h-4 text-accent" />
-                      ) : (
-                        <EyeOff className="w-4 h-4 text-muted-foreground hover:text-accent transition-colors" />
-                      )}
-                    </button>
-                  </td>
-
-                  <td className="px-3 py-2.5 min-w-[22rem] max-w-[40rem]">
+                  {/* Tarefa: coluna enxuta (base 1366x768) — o titulo trunca e o botao
+                      Historico da linha fica sempre visivel sem rolar a tabela */}
+                  <td className="px-3 py-2.5 min-w-[12rem] max-w-[18rem]">
                     <div className="flex items-center gap-2">
                       <span
                         className={`font-medium truncate ${
@@ -147,15 +272,28 @@ export function TabelaTarefas({
                       </span>
                       {tarefa.privada && <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-label="Privada" />}
                     </div>
-                    {tarefa.descricao && (
-                      <p className="text-xs text-muted-foreground truncate mt-0.5">{tarefa.descricao}</p>
-                    )}
+                    {/* Setor que enviou + numero do contrato (16/10/2026): o cliente tem
+                        coluna propria e a descricao sai daqui (fica no tooltip do titulo) */}
+                    <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                      {tarefa.setorNome ? `Setor: ${tarefa.setorNome}` : "—"}
+                      {tarefa.contratoNumero ? ` · Contrato nº ${tarefa.contratoNumero}` : ""}
+                    </p>
                   </td>
 
                   <td className="px-3 py-2.5">
                     {tarefa.nomeCliente ? (
-                      <span className="text-accent font-medium truncate block max-w-[18rem]" title={tarefa.nomeCliente}>
+                      <span className="text-accent font-medium truncate block max-w-[10rem]" title={tarefa.nomeCliente}>
                         {tarefa.nomeCliente}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+
+                  <td className="px-3 py-2.5">
+                    {tarefa.prioridade ? (
+                      <span className={`text-xs capitalize ${corDePrioridade(tarefa.prioridade)}`}>
+                        {tarefa.prioridade}
                       </span>
                     ) : (
                       <span className="text-muted-foreground">—</span>
@@ -187,13 +325,25 @@ export function TabelaTarefas({
                       <span className="text-xs">{nomeDeResponsavel(tarefa.responsavelId)}</span>
                     </span>
                   </td>
+
+                  <td className="px-3 py-2.5 whitespace-nowrap">
+                    <button
+                      type="button"
+                      onClick={(evento) => { evento.stopPropagation(); onHistorico(tarefa); }}
+                      aria-label={`Histórico da tarefa ${tarefa.titulo}`}
+                      title="Ver toda a movimentação da tarefa"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-input px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                    >
+                      <History className="w-3.5 h-3.5" /> Histórico
+                    </button>
+                  </td>
                 </tr>
               );
             })}
             {visiveis.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                  Nada nesta página.
+                <td colSpan={8} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                  {filtrando ? "Nada com os filtros de coluna." : "Nada nesta página."}
                 </td>
               </tr>
             )}

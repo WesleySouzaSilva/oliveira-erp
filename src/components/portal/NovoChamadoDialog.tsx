@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileUp, Landmark, LifeBuoy, Loader2, MessageCircleQuestion, Paperclip, X } from "lucide-react";
+import { FileUp, Landmark, LifeBuoy, Loader2, MessageCircleQuestion } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -77,7 +78,7 @@ export function NovoChamadoDialog({
     [contratos.data, banco],
   );
 
-  function addArquivos(list: FileList | null) {
+  function addArquivos(list: FileList | File[] | null) {
     if (!list) return;
     const novos = Array.from(list);
     const grandes = novos.filter((f) => f.size > MAX_MB * 1024 * 1024);
@@ -254,29 +255,18 @@ export function NovoChamadoDialog({
           </div>
 
           <div className="space-y-2">
-            <label className="inline-flex items-center gap-2 cursor-pointer rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground hover:border-accent hover:text-foreground">
-              <Paperclip className="h-3.5 w-3.5" />
-              Anexar foto ou PDF (até {MAX_ANEXOS} arquivos, {MAX_MB} MB cada)
-              <input
-                type="file"
-                multiple
-                accept="application/pdf,image/*,.doc,.docx,.xls,.xlsx"
-                className="hidden"
-                onChange={(e) => { addArquivos(e.target.files); e.currentTarget.value = ""; }}
-              />
-            </label>
-            {arquivos.length > 0 && (
-              <ul className="space-y-1">
-                {arquivos.map((f, i) => (
-                  <li key={i} className="flex items-center justify-between gap-2 rounded-md bg-muted px-2.5 py-1.5 text-xs">
-                    <span className="truncate">{f.name} <span className="text-muted-foreground">({(f.size / 1024 / 1024).toFixed(1)} MB)</span></span>
-                    <button type="button" onClick={() => setArquivos((p) => p.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-destructive">
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            {/* Anexar por clique OU arrastar até aqui (OE-13); addArquivos valida tamanho e teto. */}
+            <CaixaAnexo
+              arquivos={arquivos}
+              accept="application/pdf,image/*,.doc,.docx,.xls,.xlsx"
+              onAdicionar={(novos) => addArquivos(novos)}
+              onRemover={(indice) => setArquivos((p) => p.filter((_, j) => j !== indice))}
+              rotulo={
+                <p className="text-xs text-muted-foreground">
+                  Arraste a foto ou o PDF aqui ou clique para anexar (até {MAX_ANEXOS} arquivos, {MAX_MB} MB cada)
+                </p>
+              }
+            />
           </div>
 
           <div className="flex justify-end gap-2 pt-1">

@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Bot, User, Loader2, Sparkles, Paperclip, FileText, X } from "lucide-react";
+import { Send, Bot, User, Loader2, Sparkles, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { upsertClienteFromLaudo } from "@/lib/upsertCliente";
 import { toast } from "sonner";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import ReactMarkdown from "react-markdown";
 
 type Attachment = {
@@ -48,7 +49,6 @@ export function LaudoChatPanel({ laudoId, nomeCliente, onDadosExtraidos: _onDado
   const [uploading, setUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -323,13 +323,6 @@ export function LaudoChatPanel({ laudoId, nomeCliente, onDadosExtraidos: _onDado
     streamChat(text);
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      setPendingFiles(prev => [...prev, ...Array.from(e.target.files!)]);
-    }
-    e.target.value = "";
-  };
-
   const removePendingFile = (index: number) => {
     setPendingFiles(prev => prev.filter((_, i) => i !== index));
   };
@@ -435,41 +428,26 @@ export function LaudoChatPanel({ laudoId, nomeCliente, onDadosExtraidos: _onDado
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Pending files preview */}
-      {pendingFiles.length > 0 && (
-        <div className="px-4 py-2 border-t border-border bg-muted/10 flex flex-wrap gap-2">
-          {pendingFiles.map((file, i) => (
-            <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-secondary border border-border text-xs">
-              <FileText className="w-3 h-3 text-accent" />
-              <span className="truncate max-w-[120px]">{file.name}</span>
-              <button onClick={() => removePendingFile(i)} className="text-muted-foreground hover:text-destructive ml-1">
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Anexos pendentes — anexar por clique OU arrastar até aqui (OE-13) */}
+      <div className="px-4 py-2 border-t border-border bg-muted/10">
+        <CaixaAnexo
+          compacta
+          arquivos={pendingFiles}
+          accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp,.heic,.txt,.csv"
+          desabilitado={isStreaming || uploading}
+          onAdicionar={(novos) => setPendingFiles((prev) => [...prev, ...novos])}
+          onRemover={(indice) => removePendingFile(indice)}
+          rotulo={
+            <p className="text-xs text-muted-foreground">
+              Arraste o arquivo aqui ou clique para anexar (salvo no Drive do cliente)
+            </p>
+          }
+        />
+      </div>
 
       {/* Input */}
       <form onSubmit={handleSubmit} className="px-4 py-3 border-t border-border bg-muted/20">
         <div className="flex items-end gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={handleFileSelect}
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp,.heic,.txt,.csv"
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isStreaming || uploading}
-            className="h-11 w-11 rounded-xl border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-accent hover:border-accent/50 disabled:opacity-40 transition-all flex-shrink-0"
-            title="Anexar arquivo (salvo no Drive do cliente)"
-          >
-            <Paperclip className="w-4 h-4" />
-          </button>
           <div className="flex-1 relative">
             <textarea
               ref={textareaRef}

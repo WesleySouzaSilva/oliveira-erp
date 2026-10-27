@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import { Plus, Trash2, Upload, FileText, Search, UserPlus, Users, ChevronDown, ChevronUp, TrendingDown, Wallet, Layers } from "lucide-react";
+import { Plus, Trash2, Search, UserPlus, Users, ChevronDown, ChevronUp, TrendingDown, Wallet, Layers } from "lucide-react";
 import { FloatingInput, FloatingSelect } from "./FloatingInputs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Button } from "@/components/ui/button";
 
 const ufs = [
@@ -359,20 +360,21 @@ export function EtapaIdentificacao({ data, onChange }: Props) {
         {/* Anexo */}
         <div className="flex flex-col justify-center">
           <p className="text-sm font-medium text-foreground mb-2">Anexar contrato</p>
-          {contrato.arquivoNome ? (
-            <div className="flex items-center gap-2 text-sm text-foreground bg-muted rounded-lg px-3 py-2">
-              <FileText className="w-4 h-4 text-accent" />
-              <span className="truncate flex-1">{contrato.arquivoNome}</span>
-              <button onClick={() => { opts.onUpdate(idx, "arquivoNome", undefined); opts.onUpdate(idx, "arquivoFile", undefined); }}
-                className="text-destructive hover:text-destructive/80 text-xs">Remover</button>
-            </div>
-          ) : (
-            <label className="flex items-center gap-2 px-3 py-2 border border-dashed border-border rounded-lg cursor-pointer hover:border-accent/50 hover:bg-accent/5 transition-all text-sm text-muted-foreground">
-              <Upload className="w-4 h-4" /> Selecionar arquivo
-              <input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="hidden"
-                onChange={(e) => { const file = e.target.files?.[0]; if (file) opts.onFileUpload(idx, file); }} />
-            </label>
-          )}
+          <CaixaAnexo
+            multiple={false}
+            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+            arquivos={contrato.arquivoFile ? [contrato.arquivoFile] : []}
+            onAdicionar={(novos) => novos[0] && opts.onFileUpload(idx, novos[0])}
+            onRemover={() => {
+              opts.onUpdate(idx, "arquivoNome", undefined);
+              opts.onUpdate(idx, "arquivoFile", undefined);
+            }}
+            rotulo={
+              <p className="text-xs font-medium text-foreground">
+                Arraste o contrato aqui ou clique para selecionar
+              </p>
+            }
+          />
         </div>
       </div>
     </div>

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { FileText, Loader2, Paperclip, Send, Sparkles, User, X } from "lucide-react";
+import { FileText, Loader2, Send, Sparkles, User } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -104,27 +105,20 @@ export function ChamadoThread({
           placeholder={modo === "cliente" ? "Escreva sua mensagem para a equipe…" : "Responder ao cliente…"}
           className="w-full resize-none rounded-xl border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring"
         />
-        {arquivos.length > 0 && (
-          <ul className="flex flex-wrap gap-1.5">
-            {arquivos.map((f, i) => (
-              <li key={i} className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-[11px]">
-                <Paperclip className="h-3 w-3" /> {f.name}
-                <button type="button" onClick={() => setArquivos((p) => p.filter((_, j) => j !== i))} className="ml-1 text-muted-foreground hover:text-destructive"><X className="h-3 w-3" /></button>
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="flex items-center justify-between gap-2">
-          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-            <Paperclip className="h-3.5 w-3.5" /> Anexar
-            <input
-              type="file"
-              multiple
-              accept="application/pdf,image/*,.doc,.docx,.xls,.xlsx"
-              className="hidden"
-              onChange={(e) => { setArquivos((p) => [...p, ...Array.from(e.target.files || [])].slice(0, 5)); e.currentTarget.value = ""; }}
-            />
-          </label>
+        {/* Anexar por clique OU arrastar até aqui (OE-13); segue o teto de 5. */}
+        <CaixaAnexo
+          compacta
+          arquivos={arquivos}
+          accept="application/pdf,image/*,.doc,.docx,.xls,.xlsx"
+          onAdicionar={(novos) => setArquivos((p) => [...p, ...novos].slice(0, 5))}
+          onRemover={(indice) => setArquivos((p) => p.filter((_, j) => j !== indice))}
+          rotulo={
+            <p className="text-xs text-muted-foreground">
+              Arraste os arquivos aqui ou clique para anexar (até 5)
+            </p>
+          }
+        />
+        <div className="flex items-center justify-end gap-2">
           <Button type="submit" size="sm" disabled={enviando || (!texto.trim() && arquivos.length === 0)} className="gap-2 bg-accent text-accent-foreground hover:bg-accent/90">
             {enviando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Enviar
           </Button>

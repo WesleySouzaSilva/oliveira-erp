@@ -17,6 +17,18 @@ const EntrarApi = lazyRetry(() => import("./pages/erp/Entrar"));
 const ClientesApi = lazyRetry(() => import("./pages/erp/Clientes"));
 const HomeErp = lazyRetry(() => import("./pages/erp/Home"));
 const TarefasApi = lazyRetry(() => import("./pages/erp/Tarefas"));
+const ObjetosApi = lazyRetry(() => import("./pages/erp/Objetos"));
+const SubObjetosApi = lazyRetry(() => import("./pages/erp/SubObjetos"));
+const ContratosApi = lazyRetry(() => import("./pages/erp/Contratos"));
+const ContratosBancoApi = lazyRetry(() => import("./pages/erp/ContratosBanco"));
+const UsuariosApi = lazyRetry(() => import("./pages/erp/Usuarios"));
+const SetoresApi = lazyRetry(() => import("./pages/erp/Setores"));
+const TiposTarefaApi = lazyRetry(() => import("./pages/erp/TiposTarefa"));
+const BancosApi = lazyRetry(() => import("./pages/erp/Bancos"));
+const FuncoesApi = lazyRetry(() => import("./pages/erp/Funcoes"));
+const PermissoesApi = lazyRetry(() => import("./pages/erp/Permissoes"));
+const AuditoriaApi = lazyRetry(() => import("./pages/erp/Auditoria"));
+const CodigosTribunaisApi = lazyRetry(() => import("./pages/erp/CodigosTribunais"));
 // Páginas de entrada também sob demanda: tiram as animações do pacote inicial
 const Auth = lazyRetry(() => import("./pages/Auth"));
 const PortalLogin = lazyRetry(() => import("./pages/PortalLogin"));
@@ -39,6 +51,7 @@ const DadosClimaticos = lazyRetry(() => import("./pages/DadosClimaticos"));
 const Processos = lazyRetry(() => import("./pages/Processos"));
 const ProcessosSemCliente = lazyRetry(() => import("./pages/ProcessosSemCliente"));
 const Configuracoes = lazyRetry(() => import("./pages/Configuracoes"));
+const IntegracoesApi = lazyRetry(() => import("./pages/erp/Integracoes"));
 const Ajuda = lazyRetry(() => import("./pages/Ajuda"));
 const GuiaUso = lazyRetry(() => import("./pages/GuiaUso"));
 const Vencimentos = lazyRetry(() => import("./pages/Vencimentos"));
@@ -198,6 +211,17 @@ registrarRotas({
   "/erp/entrar": EntrarApi,
   "/erp/clientes": ClientesApi,
   "/erp/tarefas": TarefasApi,
+  "/erp/contratos": ContratosApi,
+  "/erp/contratos-banco": ContratosBancoApi,
+  "/erp/usuarios": UsuariosApi,
+  "/erp/setores": SetoresApi,
+  "/erp/tipos-tarefa": TiposTarefaApi,
+  "/erp/bancos": BancosApi,
+  "/erp/funcoes": FuncoesApi,
+  "/erp/permissoes": PermissoesApi,
+  "/erp/auditoria": AuditoriaApi,
+  "/erp/integracoes": IntegracoesApi,
+  "/erp/codigos-tribunais": CodigosTribunaisApi,
   "/feed": Feed,
   "/rh": GestaoRH,
   "/comercial": GestaoComercial,
@@ -277,10 +301,23 @@ const App = () => (
               <Route index element={<HomeErp />} />
               <Route path="clientes" element={<ClientesApi />} />
               <Route path="tarefas" element={<TarefasApi />} />
+              <Route path="contratos" element={<ContratosApi />} />
+              <Route path="contratos-banco" element={<ContratosBancoApi />} />
+              <Route path="usuarios" element={<UsuariosApi />} />
+              <Route path="setores" element={<SetoresApi />} />
+              <Route path="tipos-tarefa" element={<TiposTarefaApi />} />
+              <Route path="bancos" element={<BancosApi />} />
+              <Route path="funcoes" element={<FuncoesApi />} />
+              <Route path="permissoes" element={<PermissoesApi />} />
+              <Route path="auditoria" element={<AuditoriaApi />} />
+              <Route path="integracoes" element={<IntegracoesApi />} />
+              <Route path="codigos-tribunais" element={<CodigosTribunaisApi />} />
+              <Route path="objetos" element={<ObjetosApi />} />
+              <Route path="sub-objetos" element={<SubObjetosApi />} />
             </Route>
             <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
             {/* /gestao consolidado no Dashboard (bloco "Visão Gestor") — preserva bookmarks */}
-            <Route path="/gestao" element={<Navigate to="/" replace />} />
+            <Route path="/gestao" element={<Navigate to="/" />} />
             <Route path="/vencimentos" element={<ProtectedRoute><Vencimentos /></ProtectedRoute>} />
             <Route path="/radar" element={<ProtectedRoute><Radar /></ProtectedRoute>} />
             <Route path="/relatorios" element={<ProtectedRoute><Relatorios /></ProtectedRoute>} />
@@ -292,7 +329,7 @@ const App = () => (
             <Route path="/processos/sem-cliente" element={<ProtectedRoute><ProcessosSemCliente /></ProtectedRoute>} />
             <Route path="/processos/:id" element={<ProtectedRoute><ProcessoDetalhe /></ProtectedRoute>} />
             {/* /pipeline consolidado em /processos?view=kanban — preserva bookmarks */}
-            <Route path="/pipeline" element={<Navigate to="/processos?view=kanban" replace />} />
+            <Route path="/pipeline" element={<Navigate to="/processos?view=kanban" />} />
             <Route path="/caso/:id" element={<ProtectedRoute><PainelCaso /></ProtectedRoute>} />
             <Route path="/templates" element={<ProtectedRoute><Templates /></ProtectedRoute>} />
             <Route path="/climaticos" element={<ProtectedRoute><DadosClimaticos /></ProtectedRoute>} />
@@ -318,7 +355,7 @@ const App = () => (
             <Route path="/demandas-gerais" element={<ProtectedRoute><PainelDemandasGeraisPage /></ProtectedRoute>} />
             <Route path="/ajuda" element={<ProtectedRoute><Ajuda /></ProtectedRoute>} />
             <Route path="/guia" element={<ProtectedRoute><GuiaUso /></ProtectedRoute>} />
-            <Route path="/previa-laudos" element={<Navigate to="/laudos" replace />} />
+            <Route path="/previa-laudos" element={<Navigate to="/laudos" />} />
             <Route path="/notificacoes" element={<ProtectedRoute><Notificacoes /></ProtectedRoute>} />
             <Route path="/fila-vencidas" element={<ProtectedRoute><FilaVencidas /></ProtectedRoute>} />
             <Route path="/operacoes-sem-titular" element={<ProtectedRoute><VincularOperacoes /></ProtectedRoute>} />
@@ -340,7 +377,7 @@ const App = () => (
             <Route path="/carreira/metas" element={<ProtectedRoute><MetasSemestrais /></ProtectedRoute>} />
             <Route path="/carreira/bonus" element={<ProtectedRoute><ApuracaoBonus /></ProtectedRoute>} />
             {/* /acessos consolidado em /configuracoes?tab=acessos — preserva bookmarks */}
-            <Route path="/acessos" element={<Navigate to="/configuracoes?tab=acessos" replace />} />
+            <Route path="/acessos" element={<Navigate to="/configuracoes?tab=acessos" />} />
             <Route path="/acesso-negado" element={<AcessoNegado />} />
             <Route path="/metricas" element={<ProtectedRoute><AppLayout><MetricasIndex /></AppLayout></ProtectedRoute>} />
             <Route path="/metricas/overview-marketing" element={<ProtectedRoute><OverviewMarketing /></ProtectedRoute>} />

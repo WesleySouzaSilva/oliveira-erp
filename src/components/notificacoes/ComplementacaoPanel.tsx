@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Copy, FileUp, AlertTriangle, Lock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -303,16 +304,20 @@ export function ComplementacaoPanel({
               <Input id="compl-ref" value={referencia} onChange={(e) => setReferencia(e.target.value)} />
             </div>
             <div>
-              <Label htmlFor="compl-arq">Arquivo protocolado</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="compl-arq"
-                  type="file"
-                  className="text-xs"
-                  onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
-                />
-                {enviando && <span className="text-xs text-muted-foreground">enviando…</span>}
-              </div>
+              <Label>Arquivo protocolado</Label>
+              {/* Anexar por clique OU arrastar (OE-13); o envio começa na hora. */}
+              <CaixaAnexo
+                multiple={false}
+                arquivos={[]}
+                desabilitado={enviando}
+                onAdicionar={(novos) => novos[0] && upload(novos[0])}
+                rotulo={
+                  <p className="text-xs font-medium text-foreground">
+                    {enviando ? "enviando…" : "Arraste o arquivo aqui ou clique para selecionar"}
+                  </p>
+                }
+                className="mt-1"
+              />
               {arquivo && (
                 <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                   <FileUp className="h-3 w-3" /> anexado

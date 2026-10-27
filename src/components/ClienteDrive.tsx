@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
-import { Upload, FileText, Trash2, FolderOpen, Download, Plus, Loader2, HardDrive, Image, File } from "lucide-react";
+import { FileText, Trash2, FolderOpen, Download, Plus, Loader2, HardDrive, Image, File } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Input } from "@/components/ui/input";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { useOrgMembers } from "@/hooks/useOrgMembers";
 import { notifyOrg } from "@/lib/orgNotify";
 import { User } from "lucide-react";
@@ -63,7 +64,6 @@ export function ClienteDrive({ nomeCliente }: Props) {
   const [pastaAtiva, setPastaAtiva] = useState("Todos");
   const [novaPasta, setNovaPasta] = useState("");
   const [criandoPasta, setCriandoPasta] = useState(false);
-  const [dragging, setDragging] = useState(false);
 
   const pastasCustom = [...new Set(arquivos.map((a) => a.pasta))];
   const todasPastas = Array.from(
@@ -115,7 +115,7 @@ export function ClienteDrive({ nomeCliente }: Props) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const handleUpload = useCallback(async (files: FileList) => {
+  const handleUpload = useCallback(async (files: FileList | File[]) => {
     if (!user) return;
     const erroArquivo = validarArquivos(files);
     if (erroArquivo) { toast.error(erroArquivo); return; }
@@ -155,12 +155,6 @@ export function ClienteDrive({ nomeCliente }: Props) {
     setUploading(false);
     loadData();
   }, [user, nomeCliente, pastaAtiva, loadData]);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
-    if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files);
-  }, [handleUpload]);
 
   const isLaudoMirror = (path: string) => path.includes("/external/");
 
@@ -258,41 +252,27 @@ export function ClienteDrive({ nomeCliente }: Props) {
 
       {/* Upload zone */}
       {pastaAtiva !== "Laudos" && (
-        <div
-          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={handleDrop}
-          onClick={() => {
-            const input = document.createElement("input");
-            input.type = "file";
-            input.multiple = true;
-            input.accept = ACCEPT_ARQUIVOS;
-
-            input.onchange = (e) => {
-              const files = (e.target as HTMLInputElement).files;
-              if (files) handleUpload(files);
-            };
-            input.click();
-          }}
-          className={`border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer ${
-            dragging ? "border-accent bg-accent/5" : "border-border hover:border-accent/50"
-          }`}
-        >
-          {uploading ? (
-            <div className="flex items-center justify-center gap-2 text-accent">
-              <Loader2 className="w-5 h-5 animate-spin" />
-              <span className="text-sm font-medium">Enviando...</span>
-            </div>
-          ) : (
-            <>
-              <Upload className={`w-8 h-8 mx-auto mb-2 ${dragging ? "text-accent" : "text-muted-foreground"}`} />
-              <p className="text-sm font-medium text-foreground">Arraste arquivos ou clique para enviar</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Salvando em: <span className="font-semibold text-accent">{pastaAtiva === "Todos" ? "Geral" : pastaAtiva}</span>
-              </p>
-            </>
-          )}
-        </div>
+        <CaixaAnexo
+          arquivos={[]}
+          accept={ACCEPT_ARQUIVOS}
+          desabilitado={uploading}
+          onAdicionar={(novos) => handleUpload(novos)}
+          rotulo={
+            uploading ? (
+              <div className="flex items-center justify-center gap-2 text-accent">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-sm font-medium">Enviando...</span>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-foreground">Arraste arquivos ou clique para enviar</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Salvando em: <span className="font-semibold text-accent">{pastaAtiva === "Todos" ? "Geral" : pastaAtiva}</span>
+                </p>
+              </>
+            )
+          }
+        />
       )}
 
       {loading ? (

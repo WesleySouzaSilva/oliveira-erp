@@ -1,6 +1,5 @@
-import { useRef } from "react";
-import { Button } from "@/components/ui/button";
-import { Upload, FileText, Download, Trash2 } from "lucide-react";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
+import { FileText, Download, Trash2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAnexos, useAnexoMutations } from "./hooks/useCardSocial";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -22,19 +21,22 @@ export function CardAnexosSection({ processoId, orgId }: Props) {
   const askConfirm = useConfirm();
   const q = useAnexos(processoId);
   const m = useAnexoMutations(processoId, orgId);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const onPick = () => inputRef.current?.click();
-  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    await m.upload.mutateAsync(f);
-    if (inputRef.current) inputRef.current.value = "";
-  };
 
   return (
     <div className="space-y-2">
-      <input ref={inputRef} type="file" className="hidden" onChange={onFile} />
+      {/* Anexar por clique OU arrastar (OE-13); o envio já era um por vez. */}
+      <CaixaAnexo
+        arquivos={[]}
+        desabilitado={m.upload.isPending}
+        onAdicionar={(novos) => novos.forEach((arquivo) => m.upload.mutate(arquivo))}
+        rotulo={
+          <p className="text-sm font-medium text-foreground">
+            {m.upload.isPending
+              ? "Enviando..."
+              : "Arraste os arquivos aqui ou clique para selecionar"}
+          </p>
+        }
+      />
       <ul className="space-y-1.5">
         {q.data?.length === 0 && (
           <p className="text-xs text-muted-foreground">Nenhum anexo.</p>
@@ -72,16 +74,7 @@ export function CardAnexosSection({ processoId, orgId }: Props) {
           </li>
         ))}
       </ul>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={onPick}
-        disabled={m.upload.isPending}
-        className="h-7 text-[11px]"
-      >
-        <Upload className="w-3 h-3 mr-1" />
-        {m.upload.isPending ? "Enviando..." : "Adicionar anexo"}
-      </Button>
+
     </div>
   );
 }

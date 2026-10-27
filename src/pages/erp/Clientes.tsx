@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ListChecks, Pencil, Save, Search, Trash2, UserPlus, Users } from "lucide-react";
+import { Check, ChevronsUpDown, Building2, FileSignature, ListChecks, Pencil, Plus, Save, Search, Trash2, UserPlus, Users, X } from "lucide-react";
+import { ContratosClienteDialog } from "@/components/erp/ContratosClienteDialog";
+import { ContratosBancoClienteDialog } from "@/components/erp/ContratosBancoClienteDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -27,13 +35,25 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ErroApi, mensagemDeErro } from "@/lib/api/http";
+import { listarCidades, listarEstados, semAcento, type Cidade, type Estado } from "@/lib/api/localidade";
+import { consultarCep, consultarCnpj } from "@/lib/api/integracoes";
 import { MaskedInput } from "@/components/ui/masked-input";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   atualizarCliente,
   criarCliente,
   excluirCliente,
   listarClientes,
+  type BuscaClientes,
   type Cliente,
   type ClienteNovo,
   type Pagina,
@@ -51,45 +71,88 @@ const UFS = [
 
 const ESTADOS_CIVIL = ["Solteiro(a)", "Casado(a)", "União Estável", "Divorciado(a)", "Viúvo(a)"];
 
+/**
+ * Formulário de cliente — OBJETIVO (pedido do titular 16/10/2026): saíram nacionalidade,
+ * profissão, nome da propriedade, área, cultura principal e observações. As colunas
+ * continuam no banco (nada de histórico se perde); a API aceita os campos ausentes.
+ * Telefone/e-mail/endereço único saíram das seções: agora são listas dinâmicas por
+ * cliente (contrato 16/10/2026) e as colunas legadas recebem a linha principal.
+ */
 interface Formulario {
   nome: string;
   cpfCnpj: string;
   rg: string;
-  orgaoEmissor: string;
-  nacionalidade: string;
   estadoCivil: string;
-  profissao: string;
-  endereco: string;
-  municipio: string;
-  uf: string;
-  cep: string;
-  telefone: string;
-  email: string;
-  nomePropriedade: string;
-  culturaPrincipal: string;
-  observacoes: string;
-  areaHectares: string;
 }
 
 const FORM_VAZIO: Formulario = {
   nome: "",
   cpfCnpj: "",
   rg: "",
-  orgaoEmissor: "",
-  nacionalidade: "",
   estadoCivil: "",
-  profissao: "",
-  endereco: "",
+};
+
+/** Linha do bloco de telefones. */
+interface LinhaTelefone {
+  id?: string;
+  tipo: string;
+  numero: string;
+  principal: boolean;
+}
+
+/** Linha do bloco de e-mails. */
+interface LinhaEmail {
+  id?: string;
+  email: string;
+  principal: boolean;
+}
+
+/** Linha do bloco de endereços — cidade/UF/códigos IBGE moram aqui (antes eram globais). */
+interface LinhaEndereco {
+  id?: string;
+  tipo: string;
+  logradouro: string;
+  municipio: string;
+  uf: string;
+  ibgeCidade: string;
+  ibgeEstado: string;
+  cep: string;
+  principal: boolean;
+}
+
+const TIPOS_TELEFONE = [
+  { valor: "celular", rotulo: "Celular" },
+  { valor: "fixo", rotulo: "Fixo" },
+  { valor: "comercial", rotulo: "Comercial" },
+];
+
+const TIPOS_ENDERECO = [
+  { valor: "residencial", rotulo: "Residencial" },
+  { valor: "empresarial", rotulo: "Empresarial" },
+  { valor: "escritorio", rotulo: "Escritório" },
+];
+
+/** A primeira linha de cada bloco já nasce preenchida e marcada como principal. */
+const novaLinhaTelefone = (principal = false): LinhaTelefone => ({
+  tipo: "celular",
+  numero: "",
+  principal,
+});
+
+const novaLinhaEmail = (principal = false): LinhaEmail => ({ email: "", principal });
+
+const novaLinhaEndereco = (principal = false): LinhaEndereco => ({
+  tipo: "residencial",
+  logradouro: "",
   municipio: "",
   uf: "",
+  ibgeCidade: "",
+  ibgeEstado: "",
   cep: "",
-  telefone: "",
-  email: "",
-  nomePropriedade: "",
-  culturaPrincipal: "",
-  observacoes: "",
-  areaHectares: "",
-};
+  principal,
+});
+
+const EMAIL_VALIDO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const SITUACOES: Record<string, { rotulo: string; classe: string }> = {
   ativo: { rotulo: "Ativo", classe: "bg-green-500/15 text-green-700" },
@@ -98,50 +161,194 @@ const SITUACOES: Record<string, { rotulo: string; classe: string }> = {
   fora_do_escopo: { rotulo: "Fora do escopo", classe: "bg-orange-500/15 text-orange-700" },
 };
 
+/** Troca um campo de uma linha da lista dinâmica. */
+function mudarLinha<T>(lista: T[], indice: number, mudanca: Partial<T>): T[] {
+  return lista.map((linha, i) => (i === indice ? { ...linha, ...mudanca } : linha));
+}
+
+/** Marca a linha como principal e desmarca as demais (um principal por bloco). */
+function definirPrincipal<T extends { principal: boolean }>(
+  lista: T[],
+  indice: number,
+  marcado: boolean,
+): T[] {
+  return lista.map((linha, i) => {
+    if (i === indice) return { ...linha, principal: marcado };
+    return marcado ? { ...linha, principal: false } : linha;
+  });
+}
+
+/** A linha principal (ou a primeira, quando nenhuma está marcada) vira a coluna legada. */
+function linhaPrincipal<T extends { principal: boolean }>(lista: T[]): T | undefined {
+  return lista.find((linha) => linha.principal) ?? lista[0];
+}
+
+/** Listas do cliente no form: listas vazias/ausentes nascem só com a primeira linha. */
+function paraTelefones(cliente: ClienteNovo): LinhaTelefone[] {
+  const linhas = (cliente.telefones ?? []).map((telefone) => ({
+    id: telefone.id,
+    tipo: telefone.tipo || "celular",
+    numero: telefone.numero ?? "",
+    principal: !!telefone.principal,
+  }));
+  return linhas.length > 0 ? linhas : [novaLinhaTelefone(true)];
+}
+
+function paraEmails(cliente: ClienteNovo): LinhaEmail[] {
+  const linhas = (cliente.emails ?? []).map((email) => ({
+    id: email.id,
+    email: email.email ?? "",
+    principal: !!email.principal,
+  }));
+  return linhas.length > 0 ? linhas : [novaLinhaEmail(true)];
+}
+
+function paraEnderecos(cliente: ClienteNovo): LinhaEndereco[] {
+  const linhas = (cliente.enderecos ?? []).map((endereco) => ({
+    id: endereco.id,
+    tipo: endereco.tipo || "residencial",
+    logradouro: endereco.logradouro ?? "",
+    municipio: endereco.municipio ?? "",
+    uf: endereco.uf ?? "",
+    ibgeCidade: endereco.ibgeCidade ?? "",
+    ibgeEstado: endereco.ibgeEstado ?? "",
+    cep: endereco.cep ?? "",
+    principal: !!endereco.principal,
+  }));
+  return linhas.length > 0 ? linhas : [novaLinhaEndereco(true)];
+}
+
 function paraFormulario(cliente: ClienteNovo): Formulario {
   return {
     nome: cliente.nome ?? "",
     cpfCnpj: cliente.cpfCnpj ?? "",
     rg: cliente.rg ?? "",
-    orgaoEmissor: cliente.orgaoEmissor ?? "",
-    nacionalidade: cliente.nacionalidade ?? "",
     estadoCivil: cliente.estadoCivil ?? "",
-    profissao: cliente.profissao ?? "",
-    endereco: cliente.endereco ?? "",
-    municipio: cliente.municipio ?? "",
-    uf: cliente.uf ?? "",
-    cep: cliente.cep ?? "",
-    telefone: cliente.telefone ?? "",
-    email: cliente.email ?? "",
-    nomePropriedade: cliente.nomePropriedade ?? "",
-    culturaPrincipal: cliente.culturaPrincipal ?? "",
-    observacoes: cliente.observacoes ?? "",
-    areaHectares: cliente.areaHectares === null || cliente.areaHectares === undefined ? "" : String(cliente.areaHectares),
   };
 }
 
-function paraDto(form: Formulario): ClienteNovo {
+function paraDto(
+  form: Formulario,
+  telefones: LinhaTelefone[],
+  emails: LinhaEmail[],
+  enderecos: LinhaEndereco[],
+): ClienteNovo {
   const vazio = (valor: string) => (valor.trim() ? valor.trim() : null);
-  const area = form.areaHectares.trim().replace(",", ".");
+  // Compatibilidade: as colunas legadas (1 telefone/e-mail/endereço por cliente) continuam
+  // recebendo a linha principal (ou a primeira da lista) junto das 3 listas embutidas.
+  const telefonePrincipal = linhaPrincipal(telefones);
+  const emailPrincipal = linhaPrincipal(emails);
+  const enderecoPrincipal = linhaPrincipal(enderecos);
   return {
     nome: form.nome.trim(),
     cpfCnpj: vazio(form.cpfCnpj),
     rg: vazio(form.rg),
-    orgaoEmissor: vazio(form.orgaoEmissor),
-    nacionalidade: vazio(form.nacionalidade),
     estadoCivil: vazio(form.estadoCivil),
-    profissao: vazio(form.profissao),
-    endereco: vazio(form.endereco),
-    municipio: vazio(form.municipio),
-    uf: vazio(form.uf)?.toUpperCase() ?? null,
-    cep: vazio(form.cep),
-    telefone: vazio(form.telefone),
-    email: vazio(form.email),
-    nomePropriedade: vazio(form.nomePropriedade),
-    culturaPrincipal: vazio(form.culturaPrincipal),
-    observacoes: vazio(form.observacoes),
-    areaHectares: area ? Number(area) : null,
+    endereco: vazio(enderecoPrincipal?.logradouro ?? ""),
+    municipio: vazio(enderecoPrincipal?.municipio ?? ""),
+    uf: vazio((enderecoPrincipal?.uf ?? "").toUpperCase()),
+    cep: vazio(enderecoPrincipal?.cep ?? ""),
+    telefone: vazio(telefonePrincipal?.numero ?? ""),
+    email: vazio(emailPrincipal?.email ?? ""),
+    ibgeCidade: vazio(enderecoPrincipal?.ibgeCidade ?? ""),
+    ibgeEstado: vazio(enderecoPrincipal?.ibgeEstado ?? ""),
+    telefones: telefones.map((linha) => ({
+      id: linha.id,
+      tipo: linha.tipo,
+      numero: linha.numero.trim(),
+      principal: linha.principal,
+    })),
+    emails: emails.map((linha) => ({
+      id: linha.id,
+      email: linha.email.trim(),
+      principal: linha.principal,
+    })),
+    enderecos: enderecos.map((linha) => ({
+      id: linha.id,
+      tipo: linha.tipo,
+      logradouro: linha.logradouro.trim(),
+      municipio: linha.municipio.trim(),
+      uf: linha.uf.trim().toUpperCase(),
+      ibgeCidade: linha.ibgeCidade.trim(),
+      ibgeEstado: linha.ibgeEstado.trim(),
+      cep: linha.cep.trim(),
+      principal: linha.principal,
+    })),
   };
+}
+
+/**
+ * Campos em que a busca de texto procura — o select ao lado do campo (decisão do titular,
+ * 20/10/2026, mesmo estilo da lista de contratos): nome, CPF/CNPJ ou e-mail.
+ */
+const CAMPOS_BUSCA: { valor: BuscaClientes; rotulo: string; placeholder: string }[] = [
+  { valor: "nome", rotulo: "Nome", placeholder: "Buscar por nome do cliente..." },
+  { valor: "cpf_cnpj", rotulo: "CPF/CNPJ", placeholder: "Buscar por CPF ou CNPJ..." },
+  { valor: "email", rotulo: "E-mail", placeholder: "Buscar por e-mail..." },
+];
+
+/**
+ * Filtro por coluna (Correção 6, 22/10/2026): a listagem é PAGINADA na API, então os
+ * inputs dos cabeçalhos viram parâmetros do `GET /clientes` — o filtro de coluna e a
+ * BUSCA GLOBAL do topo valem juntos (E), e qualquer um dos dois recomeça na página 0.
+ *
+ * São 5 de 6 colunas: Nome → `nome`, CPF/CNPJ → `cpfCnpj`, Município → `municipio`,
+ * Telefone → `telefone` e Situação → `situacao` (catálogo `SITUACOES` da própria tela);
+ * "Ações" é coluna de botão, sem filtro. Os dois últimos parâmetros entraram na lib
+ * junto com esta correção — a API já os aceitava.
+ */
+type FiltroColunas = {
+  nome: string;
+  cpfCnpj: string;
+  municipio: string;
+  telefone: string;
+  situacao: string;
+};
+
+const COLUNAS_VAZIAS: FiltroColunas = {
+  nome: "",
+  cpfCnpj: "",
+  municipio: "",
+  telefone: "",
+  situacao: "",
+};
+
+/** Input pequeno sob o cabeçalho da coluna, com o (x) de limpar quando preenchido. */
+function FiltroColuna({
+  rotulo,
+  valor,
+  placeholder,
+  largura,
+  aoMudar,
+}: {
+  rotulo: string;
+  valor: string;
+  placeholder: string;
+  largura: string;
+  aoMudar: (valor: string) => void;
+}) {
+  return (
+    <div className="mt-1 flex items-center gap-1">
+      <Input
+        value={valor}
+        onChange={(evento) => aoMudar(evento.target.value)}
+        placeholder={placeholder}
+        aria-label={`Filtrar por ${rotulo}`}
+        className={`h-7 px-2 text-xs ${largura}`}
+      />
+      {valor !== "" && (
+        <button
+          type="button"
+          onClick={() => aoMudar("")}
+          aria-label={`Limpar filtro de ${rotulo}`}
+          title={`Limpar filtro de ${rotulo}`}
+          className="shrink-0 w-5 h-5 inline-grid place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      )}
+    </div>
+  );
 }
 
 export default function Clientes() {
@@ -149,12 +356,33 @@ export default function Clientes() {
   const confirmar = useConfirm();
   const [pagina, setPagina] = useState<Pagina<Cliente> | null>(null);
   const [busca, setBusca] = useState("");
+  /** Campo em que a busca de texto procura (select ao lado do campo). */
+  const [buscaEm, setBuscaEm] = useState<BuscaClientes>("nome");
+  /** Filtros por coluna (Correção 6) — vão para a API na mesma carga da busca global. */
+  const [colunas, setColunas] = useState<FiltroColunas>(COLUNAS_VAZIAS);
+  const mudarColuna = (campo: keyof FiltroColunas, valor: string) =>
+    setColunas((atual) => ({ ...atual, [campo]: valor }));
   const [carregando, setCarregando] = useState(true);
   const [numeroPagina, setNumeroPagina] = useState(0);
 
   const [dialogAberto, setDialogAberto] = useState(false);
   const [editando, setEditando] = useState<Cliente | null>(null);
+  /** Cliente cujos contratos estão abertos no dialog (e se o form de novo já abre). */
+  const [contratosDe, setContratosDe] = useState<Cliente | null>(null);
+  const [formContratoAberto, setFormContratoAberto] = useState(false);
+  /** Cliente cujos contratos COM O BANCO estão abertos no dialog (correção 4). */
+  const [contratosBancoDe, setContratosBancoDe] = useState<Cliente | null>(null);
   const [form, setForm] = useState<Formulario>(FORM_VAZIO);
+  /** Múltiplos telefones/e-mails/endereços por cliente (contrato 16/10/2026) — 1ª linha
+   * de cada bloco já nasce presente e marcada como principal. */
+  const [telefones, setTelefones] = useState<LinhaTelefone[]>([novaLinhaTelefone(true)]);
+  const [emails, setEmails] = useState<LinhaEmail[]>([novaLinhaEmail(true)]);
+  const [enderecos, setEnderecos] = useState<LinhaEndereco[]>([novaLinhaEndereco(true)]);
+  /** Nome de quem já está cadastrado com este mesmo nome+CPF/CNPJ (aviso, 16/10/2026). */
+  const [jaCadastrado, setJaCadastrado] = useState<string | null>(null);
+  /** Localidade (V16): estados para o código IBGE + cache de cidades por UF (1 carga por UF). */
+  const [estados, setEstados] = useState<Estado[]>([]);
+  const [cidadesPorUf, setCidadesPorUf] = useState<Record<string, Cidade[]>>({});
   const [salvando, setSalvando] = useState(false);
 
   // Busca ao digitar (mesmo comportamento da tela legada), com debounce para não
@@ -169,11 +397,32 @@ export default function Clientes() {
       setForm((atual) => ({ ...atual, [nome]: evento.target.value })),
   });
 
+  // `campo` e `filtrosColuna` vêm NA CHAMADA: `carregar` é memoizado (deps [navigate]),
+  // então os defaults congelariam na primeira renderização — quem chama lê o estado
+  // fresco do próprio escopo.
   const carregar = useCallback(
-    async (nome: string, paginaAtual: number) => {
+    async (
+      nome: string,
+      paginaAtual: number,
+      campo: BuscaClientes = buscaEm,
+      filtrosColuna: FiltroColunas = COLUNAS_VAZIAS,
+    ) => {
       setCarregando(true);
       try {
-        const resultado = await listarClientes({ nome: nome.trim() || undefined, page: paginaAtual, size: 20 });
+        const termo = nome.trim();
+        const resultado = await listarClientes({
+          // busca global (topo)
+          busca: termo || undefined,
+          buscaEm: termo ? campo : undefined,
+          // filtros por coluna (E com a busca; vazio = não manda o parâmetro)
+          nome: filtrosColuna.nome.trim() || undefined,
+          cpfCnpj: filtrosColuna.cpfCnpj.trim() || undefined,
+          municipio: filtrosColuna.municipio.trim() || undefined,
+          telefone: filtrosColuna.telefone.trim() || undefined,
+          situacao: filtrosColuna.situacao || undefined,
+          page: paginaAtual,
+          size: 20,
+        });
         setPagina(resultado);
         setNumeroPagina(resultado.page.number);
       } catch (erro) {
@@ -187,24 +436,212 @@ export default function Clientes() {
         setCarregando(false);
       }
     },
+	// eslint-disable-next-line react-hooks/exhaustive-deps -- campo = buscaEm le o estado na hora da chamada
     [navigate],
   );
 
   useEffect(() => {
     carregar("", 0);
+    // Estados (UF + código IBGE) — leitura aberta, carrega uma vez.
+    void listarEstados().then(setEstados).catch(() => setEstados([]));
   }, [carregar]);
 
+  // Cidades por UF em cache: as linhas de endereço podem usar UFs diferentes e a mesma
+  // UF não precisa ser baixada duas vezes (o datalist das 5.5k cidades é pesado).
+  const ufsCarregando = useRef<Set<string>>(new Set());
+  const carregarCidades = useCallback(
+    (uf: string) => {
+      const chave = uf.trim().toUpperCase();
+      if (!chave || cidadesPorUf[chave] || ufsCarregando.current.has(chave)) return;
+      ufsCarregando.current.add(chave);
+      listarCidades(chave)
+        .then((lista) => setCidadesPorUf((atual) => ({ ...atual, [chave]: lista })))
+        .catch(() => setCidadesPorUf((atual) => ({ ...atual, [chave]: [] })))
+        .finally(() => ufsCarregando.current.delete(chave));
+    },
+    [cidadesPorUf],
+  );
+
+  // Edição: as cidades das UFs já escolhidas nas linhas entram no cache no primeiro render.
+  const ufsDasLinhas = enderecos
+    .map((linha) => linha.uf.trim().toUpperCase())
+    .filter(Boolean)
+    .join(",");
+  useEffect(() => {
+    ufsDasLinhas.split(",").filter(Boolean).forEach((uf) => carregarCidades(uf));
+  }, [ufsDasLinhas, carregarCidades]);
+
+  /** Trocou a UF da linha: carrega as cidades dela e limpa a cidade (e os códigos) da anterior. */
+  const trocarUfEndereco = (indice: number, uf: string) => {
+    setEnderecos((atual) => mudarLinha(atual, indice, { uf, municipio: "", ibgeCidade: "", ibgeEstado: "" }));
+    carregarCidades(uf);
+  };
+
+  /** Digitou/escolheu a cidade da linha: casa com o catálogo da UF e preenche UF + códigos IBGE. */
+  const digitarCidadeEndereco = (indice: number, valor: string) => {
+    const linha = enderecos[indice];
+    const cidades = cidadesPorUf[(linha?.uf ?? "").trim().toUpperCase()] ?? [];
+    const cidade = cidades.find((item) => semAcento(item.nome) === semAcento(valor));
+    const codigoEstado = estados.find((estado) => estado.uf === cidade?.uf)?.codigoIbge ?? "";
+    setEnderecos((atual) =>
+      mudarLinha(atual, indice, {
+        municipio: valor,
+        uf: cidade ? cidade.uf : (linha?.uf ?? ""),
+        ibgeCidade: cidade ? cidade.codigoIbge : "",
+        ibgeEstado: cidade ? codigoEstado : "",
+      }),
+    );
+  };
+
+  /**
+   * Preenche uma linha de endereço a partir de dados externos (CEP ou CNPJ), casando a
+   * cidade com o catálogo IBGE da UF para gravar os códigos — mesma régua do combobox.
+   */
+  const aplicarEnderecoNaLinha = async (
+    indice: number,
+    dados: { logradouro?: string | null; municipio?: string | null; uf?: string | null; cep?: string | null },
+  ) => {
+    const uf = (dados.uf ?? "").trim().toUpperCase();
+    const municipio = (dados.municipio ?? "").trim();
+    let cidades: Cidade[] = uf ? cidadesPorUf[uf] ?? [] : [];
+    if (uf && cidades.length === 0) {
+      try {
+        cidades = await listarCidades(uf);
+        setCidadesPorUf((atual) => ({ ...atual, [uf]: cidades }));
+      } catch {
+        cidades = [];
+      }
+    }
+    const cidade = municipio
+      ? cidades.find((item) => semAcento(item.nome) === semAcento(municipio))
+      : undefined;
+    const codigoEstado = estados.find((estado) => estado.uf === (cidade?.uf || uf))?.codigoIbge ?? "";
+    setEnderecos((atual) =>
+      mudarLinha(atual, indice, {
+        logradouro: dados.logradouro?.trim() || (atual[indice]?.logradouro ?? ""),
+        municipio: municipio || (atual[indice]?.municipio ?? ""),
+        uf: uf || (atual[indice]?.uf ?? ""),
+        ibgeCidade: cidade?.codigoIbge ?? "",
+        ibgeEstado: cidade ? codigoEstado : "",
+        cep: dados.cep?.trim() || (atual[indice]?.cep ?? ""),
+      }),
+    );
+  };
+
+  /** CEP completo (8 dígitos) → busca o endereço na Invertexto e preenche a linha. */
+  const preencherPorCep = async (indice: number, cep: string) => {
+    const digitos = cep.replace(/\D/g, "");
+    if (digitos.length !== 8) return; // ainda incompleto: não gasta requisição
+    try {
+      const dados = await consultarCep(digitos);
+      await aplicarEnderecoNaLinha(indice, {
+        logradouro: dados.logradouro,
+        municipio: dados.localidade,
+        uf: dados.uf,
+        cep: dados.cep ?? cep,
+      });
+    } catch (erro) {
+      toast.error(mensagemDeErro(erro));
+    }
+  };
+
+  /**
+   * CNPJ: grava o telefone e o e-mail da empresa na primeira linha VAZIA de cada bloco —
+   * nunca sobrescreve o que já foi digitado (27/10/2026).
+   */
+  const preencherContatoDaEmpresa = (telefone?: string | null, email?: string | null) => {
+    const fone = telefone?.trim();
+    if (fone) {
+      setTelefones((atual) => {
+        const vazio = atual.findIndex((linha) => !linha.numero.trim());
+        return vazio === -1 ? atual : mudarLinha(atual, vazio, { numero: fone });
+      });
+    }
+    const mail = email?.trim();
+    if (mail && EMAIL_VALIDO.test(mail)) {
+      setEmails((atual) => {
+        const vazio = atual.findIndex((linha) => !linha.email.trim());
+        return vazio === -1 ? atual : mudarLinha(atual, vazio, { email: mail });
+      });
+    }
+  };
+
+  /** CNPJ (14 dígitos) → preenche nome (razão social, se vazio), contato e endereço principal. */
+  const preencherPorCnpj = async () => {
+    const digitos = form.cpfCnpj.replace(/\D/g, "");
+    if (digitos.length !== 14) {
+      toast.error("Informe um CNPJ com 14 dígitos para buscar os dados da empresa.");
+      return;
+    }
+    try {
+      const dados = await consultarCnpj(digitos);
+      if (dados.razaoSocial && !form.nome.trim()) {
+        const razao = dados.razaoSocial;
+        setForm((atual) => ({ ...atual, nome: razao }));
+      }
+      preencherContatoDaEmpresa(dados.telefone, dados.email);
+      // endereço principal (ou a primeira linha quando nenhuma está marcada);
+      // o campo é texto livre "Rua, número, bairro", então os três vão juntos
+      const indice = Math.max(0, enderecos.findIndex((linha) => linha.principal));
+      const logradouro = [dados.logradouro, dados.numero, dados.bairro].filter(Boolean).join(", ").trim();
+      await aplicarEnderecoNaLinha(indice, {
+        logradouro,
+        municipio: dados.municipio,
+        uf: dados.uf,
+        cep: dados.cep,
+      });
+      toast.success("Dados da empresa preenchidos pelo CNPJ.");
+    } catch (erro) {
+      toast.error(mensagemDeErro(erro));
+    }
+  };
+
+  // Busca global + filtros de coluna com debounce de 300 ms — os dois valem juntos (E)
+  // e a carga sempre recomeça na página 0. O campo do select passa pela mesma régua
+  // (uma chamada só por estado); tudo viaja como ARGUMENTO, porque `carregar` é
+  // memoizado sem `buscaEm`/`colunas` nas deps.
   useEffect(() => {
     if (primeiraBusca.current) {
       primeiraBusca.current = false;
       return;
     }
     if (timerBusca.current) window.clearTimeout(timerBusca.current);
-    timerBusca.current = window.setTimeout(() => carregar(busca, 0), 300);
+    timerBusca.current = window.setTimeout(
+      () => carregar(busca, 0, buscaEm, colunas),
+      300,
+    );
     return () => {
       if (timerBusca.current) window.clearTimeout(timerBusca.current);
     };
-  }, [busca, carregar]);
+  }, [busca, buscaEm, colunas, carregar]);
+
+  /**
+   * Duplicidade em tempo real (pedido do titular 16/10/2026): enquanto o admin preenche
+   * NOME + CPF/CNPJ no cadastro novo, checa se já existe a combinação e avisa na hora.
+   * Só avisa — salvar continua sendo decisão de quem cadastra.
+   */
+  const timerDuplicado = useRef<number | null>(null);
+  useEffect(() => {
+    if (timerDuplicado.current) window.clearTimeout(timerDuplicado.current);
+    const digitos = form.cpfCnpj.replace(/\D/g, "");
+    if (editando || !form.nome.trim() || digitos.length < 11) {
+      setJaCadastrado(null);
+      return;
+    }
+    timerDuplicado.current = window.setTimeout(() => {
+      listarClientes({ nome: form.nome.trim(), cpfCnpj: digitos, size: 5 })
+        .then((resultado) => {
+          const achado = resultado.content.find(
+            (cliente) => (cliente.cpfCnpj ?? "").replace(/\D/g, "") === digitos,
+          );
+          setJaCadastrado(achado ? achado.nome : null);
+        })
+        .catch(() => setJaCadastrado(null));
+    }, 400);
+    return () => {
+      if (timerDuplicado.current) window.clearTimeout(timerDuplicado.current);
+    };
+  }, [form.nome, form.cpfCnpj, editando]);
 
   const excluir = async (cliente: Cliente) => {
     const confirmado = await confirmar({
@@ -221,7 +658,12 @@ export default function Clientes() {
       toast.success("Cliente excluído");
       // última linha da página? volta uma para não cair numa página vazia
       const ultimaDaPagina = (pagina?.content.length ?? 0) === 1 && numeroPagina > 0;
-      await carregar(busca, ultimaDaPagina ? numeroPagina - 1 : numeroPagina);
+      await carregar(
+        busca,
+        ultimaDaPagina ? numeroPagina - 1 : numeroPagina,
+        buscaEm,
+        colunas,
+      );
     } catch (erro) {
       if (erro instanceof ErroApi && erro.status === 401) {
         navigate("/erp/entrar", { replace: true });
@@ -234,44 +676,79 @@ export default function Clientes() {
   const buscar = (evento: React.FormEvent) => {
     evento.preventDefault();
     if (timerBusca.current) window.clearTimeout(timerBusca.current);
-    carregar(busca, 0);
+    carregar(busca, 0, buscaEm, colunas);
   };
 
   const abrirNovo = () => {
     setEditando(null);
     setForm(FORM_VAZIO);
+    // Cada bloco abre com a primeira linha (principal) pronta para digitar
+    setTelefones([novaLinhaTelefone(true)]);
+    setEmails([novaLinhaEmail(true)]);
+    setEnderecos([novaLinhaEndereco(true)]);
     setDialogAberto(true);
   };
 
   const abrirEdicao = (cliente: Cliente) => {
     setEditando(cliente);
     setForm(paraFormulario(cliente));
+    // As listas vêm no GET do cliente; vazias/ausentes nascem só a primeira linha
+    setTelefones(paraTelefones(cliente));
+    setEmails(paraEmails(cliente));
+    setEnderecos(paraEnderecos(cliente));
     setDialogAberto(true);
   };
 
-  const salvar = async (evento: React.FormEvent) => {
+  /** Pelo menos 1 telefone, 1 e-mail e 1 endereço — e as linhas com os campos obrigatórios. */
+  const validarListas = (): string | null => {
+    if (telefones.length === 0) return "Informe pelo menos um telefone";
+    if (emails.length === 0) return "Informe pelo menos um e-mail";
+    if (enderecos.length === 0) return "Informe pelo menos um endereço";
+    if (telefones.some((linha) => !linha.numero.trim())) {
+      return "Preencha o número de todos os telefones";
+    }
+    if (emails.some((linha) => !linha.email.trim() || !EMAIL_VALIDO.test(linha.email.trim()))) {
+      return "Preencha um e-mail válido em todas as linhas";
+    }
+    if (enderecos.some((linha) => !linha.logradouro.trim() || !linha.municipio.trim() || !linha.uf.trim())) {
+      return "Preencha logradouro, cidade e UF de todos os endereços";
+    }
+    return null;
+  };
+
+  /**
+   * Salva o cliente. Com `gerarContrato` (botão "Salvar e gerar contrato"), fecha o
+   * cadastro e abre o formulário de contrato do cliente recém-salvo.
+   */
+  const salvar = async (evento: React.FormEvent | React.MouseEvent, gerarContrato = false) => {
     evento.preventDefault();
     if (!form.nome.trim()) {
       toast.error("Informe o nome do cliente");
       return;
     }
-    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
-      toast.error("E-mail inválido");
+    const problemaNasListas = validarListas();
+    if (problemaNasListas) {
+      toast.error(problemaNasListas);
       return;
     }
 
     setSalvando(true);
     try {
-      const dados = paraDto(form);
+      const dados = paraDto(form, telefones, emails, enderecos);
+      let clienteSalvo: Cliente | null = null;
       if (editando) {
-        await atualizarCliente(editando.id, dados);
+        clienteSalvo = await atualizarCliente(editando.id, dados);
         toast.success("Cliente atualizado");
       } else {
-        await criarCliente(dados);
+        clienteSalvo = await criarCliente(dados);
         toast.success("Cliente cadastrado");
       }
       setDialogAberto(false);
-      await carregar(busca, numeroPagina);
+      await carregar(busca, numeroPagina, buscaEm, colunas);
+      if (gerarContrato && clienteSalvo) {
+        setContratosDe(clienteSalvo);
+        setFormContratoAberto(true);
+      }
     } catch (erro) {
       const campos = erro instanceof ErroApi && erro.campos.length > 0 ? erro.campos : null;
       toast.error(campos ? `${campos[0].nome}: ${campos[0].mensagem}` : mensagemDeErro(erro));
@@ -280,10 +757,15 @@ export default function Clientes() {
     }
   };
 
+  const campoBuscaPlaceholder =
+    CAMPOS_BUSCA.find((opcao) => opcao.valor === buscaEm)?.placeholder ?? CAMPOS_BUSCA[0].placeholder;
+
   const clientes = pagina?.content ?? [];
   const total = pagina?.page.totalElements ?? 0;
   const primeiro = pagina?.page.first ?? true;
   const ultimo = pagina?.page.last ?? true;
+  /** Algum filtro de coluna preenchido (para o estado vazio não culpar a busca). */
+  const temFiltroColuna = Object.values(colunas).some((valor) => valor !== "");
 
   return (
     <div className="p-4 sm:p-6 lg:p-10 space-y-6">
@@ -302,16 +784,35 @@ export default function Clientes() {
         }
       />
 
-      {/* Busca por nome — mesmo padrão da tela legada: ícone dentro do campo */}
-      <form onSubmit={buscar} className="relative mb-2">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar cliente por nome..."
-          aria-label="Buscar cliente por nome"
-          className="pl-9"
-        />
+      {/* Busca com TIPO (mesmo estilo da lista de contratos): escolhe onde procurar —
+          nome, CPF/CNPJ ou e-mail — e digita o texto. */}
+      <form onSubmit={buscar} className="flex items-center gap-2 mb-2">
+        <select
+          aria-label="Tipo de busca"
+          value={buscaEm}
+          onChange={(evento) => {
+            // Só troca o campo: o efeito do debounce dispara a nova busca (300 ms),
+            // sem gerar dois pedidos para o mesmo estado.
+            setBuscaEm(evento.target.value as BuscaClientes);
+          }}
+          className="h-10 w-40 shrink-0 rounded-md border border-input bg-background px-3 text-sm"
+        >
+          {CAMPOS_BUSCA.map((opcao) => (
+            <option key={opcao.valor} value={opcao.valor}>
+              {opcao.rotulo}
+            </option>
+          ))}
+        </select>
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder={campoBuscaPlaceholder}
+            aria-label={campoBuscaPlaceholder}
+            className="pl-9"
+          />
+        </div>
       </form>
 
       {carregando && !pagina ? (
@@ -319,10 +820,12 @@ export default function Clientes() {
       ) : clientes.length === 0 ? (
         <EmptyState
           icon={Users}
-          title={busca ? "Nenhum cliente encontrado" : "Nenhum cliente cadastrado"}
+          title={
+            busca || temFiltroColuna ? "Nenhum cliente encontrado" : "Nenhum cliente cadastrado"
+          }
           description={
-            busca
-              ? "Tente outro nome ou limpe a busca."
+            busca || temFiltroColuna
+              ? "Tente outro termo, troque o tipo de busca ou limpe os filtros das colunas."
               : "Cadastre o primeiro cliente para começar a usar o módulo."
           }
           action={{ label: "Novo cliente", onClick: abrirNovo }}
@@ -332,13 +835,85 @@ export default function Clientes() {
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
+                {/* Filtro por coluna (Correção 6): cada campo vira parâmetro do
+                    `GET /clientes` e vale JUNTO com a busca global do topo (E) — os
+                    dois recomeçam sempre na página 0. */}
                 <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>CPF/CNPJ</TableHead>
-                  <TableHead>Município</TableHead>
-                  <TableHead>Telefone</TableHead>
-                  <TableHead>Situação</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
+                  <TableHead className="align-bottom">
+                    Nome
+                    <FiltroColuna
+                      rotulo="Nome"
+                      valor={colunas.nome}
+                      placeholder="Nome..."
+                      largura="w-32"
+                      aoMudar={(valor) => mudarColuna("nome", valor)}
+                    />
+                  </TableHead>
+                  <TableHead className="align-bottom">
+                    CPF/CNPJ
+                    <FiltroColuna
+                      rotulo="CPF/CNPJ"
+                      valor={colunas.cpfCnpj}
+                      placeholder="CPF ou CNPJ"
+                      largura="w-32"
+                      aoMudar={(valor) => mudarColuna("cpfCnpj", valor)}
+                    />
+                  </TableHead>
+                  <TableHead className="align-bottom">
+                    Município
+                    <FiltroColuna
+                      rotulo="Município"
+                      valor={colunas.municipio}
+                      placeholder="Município..."
+                      largura="w-32"
+                      aoMudar={(valor) => mudarColuna("municipio", valor)}
+                    />
+                  </TableHead>
+                  <TableHead className="align-bottom">
+                    Telefone
+                    <FiltroColuna
+                      rotulo="Telefone"
+                      valor={colunas.telefone}
+                      placeholder="Telefone..."
+                      largura="w-28"
+                      aoMudar={(valor) => mudarColuna("telefone", valor)}
+                    />
+                  </TableHead>
+                  <TableHead className="align-bottom">
+                    Situação
+                    <div className="mt-1 flex items-center gap-1">
+                      <select
+                        aria-label="Filtrar por Situação"
+                        value={colunas.situacao}
+                        onChange={(evento) => mudarColuna("situacao", evento.target.value)}
+                        className="h-7 w-32 rounded-md border border-input bg-background px-1.5 text-xs"
+                      >
+                        <option value="">Todas</option>
+                        {/* mesmos valores do catálogo que a coluna usa */}
+                        {Object.entries(SITUACOES).map(([valor, situacao]) => (
+                          <option key={valor} value={valor}>
+                            {situacao.rotulo}
+                          </option>
+                        ))}
+                      </select>
+                      {colunas.situacao !== "" && (
+                        <button
+                          type="button"
+                          onClick={() => mudarColuna("situacao", "")}
+                          aria-label="Limpar filtro de Situação"
+                          title="Limpar filtro de Situação"
+                          className="shrink-0 w-5 h-5 inline-grid place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </TableHead>
+                  <TableHead className="text-right align-bottom">
+                    Ações
+                    {/* respiro para a linha de filtros alinhar os rótulos */}
+                    <div className="mt-1 h-7" aria-hidden="true" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -380,6 +955,32 @@ export default function Clientes() {
                         >
                           <ListChecks className="w-4 h-4 mr-1" /> Nova tarefa
                         </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              title={`Contratos de ${cliente.nome}`}
+                            >
+                              <FileSignature className="w-4 h-4 mr-1" /> Contratos
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {/* Duas visões (correção 4): com o ESCRITÓRIO (dialog antigo,
+                                inalterado) e com o BANCO (dialog novo, client-scoped) */}
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                setContratosDe(cliente);
+                                setFormContratoAberto(false);
+                              }}
+                            >
+                              Com o escritório
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setContratosBancoDe(cliente)}>
+                              Com o banco
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         <Button size="sm" variant="ghost" onClick={() => abrirEdicao(cliente)}>
                           <Pencil className="w-4 h-4 mr-1" /> Editar
                         </Button>
@@ -446,31 +1047,36 @@ export default function Clientes() {
                   <Input {...campo("nome")} placeholder="Nome completo" required />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-cpfCnpj">CPF/CNPJ</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-cpfCnpj">CPF/CNPJ *</Label>
                   <MaskedInput
                     id="cliente-cpfCnpj"
                     mask="cpfCnpj"
                     value={form.cpfCnpj}
                     onChange={(v) => setForm((atual) => ({ ...atual, cpfCnpj: v }))}
                     placeholder="000.000.000-00"
+                    required
                   />
+                  {/* Busca os dados da empresa pelo CNPJ (Invertexto): preenche razão social
+                      e endereço principal. Só para CNPJ (14 dígitos). */}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={preencherPorCnpj}
+                    className="w-full"
+                  >
+                    <Building2 className="w-3.5 h-3.5 mr-1" /> Buscar empresa (CNPJ)
+                  </Button>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-rg">RG</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-rg">RG (opcional)</Label>
                   <Input {...campo("rg")} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-orgaoEmissor">Órgão emissor</Label>
-                  <Input {...campo("orgaoEmissor")} placeholder="Ex.: DETRAN/GO" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-nacionalidade">Nacionalidade</Label>
-                  <Input {...campo("nacionalidade")} placeholder="Brasileira" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-estadoCivil">Estado civil</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-estadoCivil">Estado civil *</Label>
                   <select
                     id="cliente-estadoCivil"
+                    required
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     value={form.estadoCivil}
                     onChange={(e) => setForm((atual) => ({ ...atual, estadoCivil: e.target.value }))}
@@ -481,96 +1087,335 @@ export default function Clientes() {
                     ))}
                   </select>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-profissao">Profissão</Label>
-                  <Input {...campo("profissao")} placeholder="Produtor Rural" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-email">E-mail</Label>
-                  <Input {...campo("email")} type="email" placeholder="email@exemplo.com" />
-                </div>
               </div>
             </section>
 
+            {/* Múltiplos telefones (contrato 16/10/2026): uma linha por número, um principal */}
             <section className="rounded-xl border border-border bg-card p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">Contato e endereço</h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-telefone">Telefone</Label>
-                  <MaskedInput
-                    id="cliente-telefone"
-                    mask="telefone"
-                    value={form.telefone}
-                    onChange={(v) => setForm((atual) => ({ ...atual, telefone: v }))}
-                    placeholder="(00) 00000-0000"
-                  />
+              <h3 className="text-sm font-semibold text-foreground">Telefones</h3>
+              {telefones.map((linha, indice) => (
+                <div
+                  key={linha.id ?? `telefone-${indice}`}
+                  className="grid gap-3 sm:grid-cols-[150px_1fr_auto] sm:items-end"
+                >
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground" htmlFor={`cliente-telefone-tipo-${indice}`}>
+                      Tipo
+                    </Label>
+                    <select
+                      id={`cliente-telefone-tipo-${indice}`}
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={linha.tipo}
+                      onChange={(e) => setTelefones((atual) => mudarLinha(atual, indice, { tipo: e.target.value }))}
+                    >
+                      {TIPOS_TELEFONE.map((tipo) => (
+                        <option key={tipo.valor} value={tipo.valor}>{tipo.rotulo}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground" htmlFor={`cliente-telefone-numero-${indice}`}>
+                      Número *
+                    </Label>
+                    <MaskedInput
+                      id={`cliente-telefone-numero-${indice}`}
+                      mask="telefone"
+                      value={linha.numero}
+                      onChange={(valor) => setTelefones((atual) => mudarLinha(atual, indice, { numero: valor }))}
+                      placeholder="(00) 00000-0000"
+                      required
+                    />
+                  </div>
+                  <div className="flex items-center gap-3 pb-2.5">
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-input"
+                        checked={linha.principal}
+                        onChange={(e) => setTelefones((atual) => definirPrincipal(atual, indice, e.target.checked))}
+                      />
+                      Principal
+                    </label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      title="Remover telefone"
+                      className="text-destructive hover:text-destructive"
+                      disabled={telefones.length === 1}
+                      onClick={() => setTelefones((atual) => atual.filter((_, i) => i !== indice))}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-cep">CEP</Label>
-                  <MaskedInput
-                    id="cliente-cep"
-                    mask="cep"
-                    value={form.cep}
-                    onChange={(v) => setForm((atual) => ({ ...atual, cep: v }))}
-                    placeholder="00000-000"
-                  />
-                </div>
-                <div className="sm:col-span-2 space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-endereco">Endereço</Label>
-                  <Input {...campo("endereco")} placeholder="Rua, número, bairro" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-municipio">Município</Label>
-                  <Input {...campo("municipio")} placeholder="Município" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-uf">UF</Label>
-                  <select
-                    id="cliente-uf"
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={form.uf}
-                    onChange={(e) => setForm((atual) => ({ ...atual, uf: e.target.value }))}
-                  >
-                    <option value="">Selecione</option>
-                    {UFS.map((uf) => (
-                      <option key={uf} value={uf}>{uf}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setTelefones((atual) => [...atual, novaLinhaTelefone()])}
+              >
+                <Plus className="w-4 h-4 mr-1" /> Adicionar telefone
+              </Button>
             </section>
 
+            {/* Múltiplos e-mails: uma linha por endereço eletrônico, um principal */}
             <section className="rounded-xl border border-border bg-card p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">Propriedade</h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-nomePropriedade">Nome da Propriedade</Label>
-                  <Input {...campo("nomePropriedade")} placeholder="Ex: Sítio São José" />
+              <h3 className="text-sm font-semibold text-foreground">E-mails</h3>
+              {emails.map((linha, indice) => (
+                <div key={linha.id ?? `email-${indice}`} className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground" htmlFor={`cliente-email-${indice}`}>
+                      E-mail *
+                    </Label>
+                    <Input
+                      id={`cliente-email-${indice}`}
+                      type="email"
+                      placeholder="email@exemplo.com"
+                      autoComplete="off"
+                      required
+                      value={linha.email}
+                      onChange={(e) => setEmails((atual) => mudarLinha(atual, indice, { email: e.target.value }))}
+                    />
+                  </div>
+                  <div className="flex items-center gap-3 pb-2.5">
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-input"
+                        checked={linha.principal}
+                        onChange={(e) => setEmails((atual) => definirPrincipal(atual, indice, e.target.checked))}
+                      />
+                      Principal
+                    </label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      title="Remover e-mail"
+                      className="text-destructive hover:text-destructive"
+                      disabled={emails.length === 1}
+                      onClick={() => setEmails((atual) => atual.filter((_, i) => i !== indice))}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-areaHectares">Área (hectares)</Label>
-                  <Input {...campo("areaHectares")} type="number" step="0.01" placeholder="Ex: 50" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-culturaPrincipal">Cultura principal</Label>
-                  <Input {...campo("culturaPrincipal")} placeholder="Ex: Soja, Milho, Café" />
-                </div>
-                <div className="sm:col-span-2 space-y-1.5">
-                  <Label className="text-xs text-muted-foreground" htmlFor="cliente-observacoes">Observações</Label>
-                  <textarea
-                    id="cliente-observacoes"
-                    className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={form.observacoes}
-                    onChange={(e) => setForm((atual) => ({ ...atual, observacoes: e.target.value }))}
-                  />
-                </div>
-              </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setEmails((atual) => [...atual, novaLinhaEmail()])}
+              >
+                <Plus className="w-4 h-4 mr-1" /> Adicionar e-mail
+              </Button>
             </section>
 
-            <DialogFooter>
+            {/* Múltiplos endereços: cidade/UF da linha alimentam o datalist (V16) e os códigos IBGE */}
+            <section className="rounded-xl border border-border bg-card p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-foreground">Endereços</h3>
+              {enderecos.map((linha, indice) => (
+                <div key={linha.id ?? `endereco-${indice}`} className="rounded-lg border border-border/70 p-3 space-y-3">
+                  {/* Linha 1: Tipo + Principal ao lado do Tipo + remover (27/10/2026) */}
+                  <div className="grid gap-3 sm:grid-cols-3 sm:items-end">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground" htmlFor={`cliente-endereco-tipo-${indice}`}>
+                        Tipo
+                      </Label>
+                      <select
+                        id={`cliente-endereco-tipo-${indice}`}
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        value={linha.tipo}
+                        onChange={(e) => setEnderecos((atual) => mudarLinha(atual, indice, { tipo: e.target.value }))}
+                      >
+                        {TIPOS_ENDERECO.map((tipo) => (
+                          <option key={tipo.valor} value={tipo.valor}>{tipo.rotulo}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-3 pb-2.5">
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-input"
+                          checked={linha.principal}
+                          onChange={(e) => setEnderecos((atual) => definirPrincipal(atual, indice, e.target.checked))}
+                        />
+                        Principal
+                      </label>
+                    </div>
+                    <div className="flex items-center justify-end pb-2.5">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        title="Remover endereço"
+                        className="text-destructive hover:text-destructive"
+                        disabled={enderecos.length === 1}
+                        onClick={() => setEnderecos((atual) => atual.filter((_, i) => i !== indice))}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  {/* Linha 2: CEP com o botão de busca AO LADO do campo (27/10/2026) */}
+                  <div className="grid gap-3 sm:grid-cols-3 sm:items-end">
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label className="text-xs text-muted-foreground" htmlFor={`cliente-endereco-cep-${indice}`}>
+                        CEP
+                      </Label>
+                      <div className="flex gap-2">
+                        <MaskedInput
+                          id={`cliente-endereco-cep-${indice}`}
+                          mask="cep"
+                          className="flex-1"
+                          value={linha.cep}
+                          onChange={(valor) => setEnderecos((atual) => mudarLinha(atual, indice, { cep: valor }))}
+                          placeholder="00000-000"
+                        />
+                        {/* Busca o endereço na Invertexto pelo CEP (cliente PF) — clique
+                            explícito (sem blur) para não gastar 2 requisições do contador. */}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => preencherPorCep(indice, linha.cep)}
+                          className="shrink-0"
+                        >
+                          <Search className="w-3.5 h-3.5 mr-1" /> Pesquisar CEP
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3 sm:items-end">
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label className="text-xs text-muted-foreground" htmlFor={`cliente-endereco-logradouro-${indice}`}>
+                        Logradouro *
+                      </Label>
+                      <Input
+                        id={`cliente-endereco-logradouro-${indice}`}
+                        placeholder="Rua, número, bairro"
+                        autoComplete="off"
+                        required
+                        value={linha.logradouro}
+                        onChange={(e) =>
+                          setEnderecos((atual) => mudarLinha(atual, indice, { logradouro: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground" htmlFor={`cliente-endereco-uf-${indice}`}>
+                        UF *
+                      </Label>
+                      <select
+                        id={`cliente-endereco-uf-${indice}`}
+                        required
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        value={linha.uf}
+                        onChange={(e) => trocarUfEndereco(indice, e.target.value)}
+                      >
+                        <option value="">Selecione</option>
+                        {UFS.map((uf) => (
+                          <option key={uf} value={uf}>{uf}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    {/* Só o nome da cidade na tela; o código IBGE entra sozinho no banco */}
+                    <Label className="text-xs text-muted-foreground" htmlFor={`cliente-endereco-cidade-${indice}`}>
+                      Cidade *
+                    </Label>
+                    {/* Combobox de cidades da UF da linha (19/10/2026): virou Popover+Command
+                        (igual os objetos de Usuários) porque o datalist do navegador abria
+                        o menu colado na lateral do campo. Escolher preenche UF + códigos IBGE. */}
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          id={`cliente-endereco-cidade-${indice}`}
+                          variant="outline"
+                          role="combobox"
+                          aria-label={linha.uf ? `Cidade (${linha.uf})` : "Cidade"}
+                          className="w-full justify-between font-normal h-10"
+                          disabled={!linha.uf}
+                        >
+                          <span className={linha.municipio ? "" : "text-muted-foreground"}>
+                            {linha.municipio ||
+                              (linha.uf ? "Selecione a cidade..." : "Escolha a UF primeiro")}
+                          </span>
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        className="w-[--radix-popover-trigger-width] p-0"
+                        align="start"
+                      >
+                        <Command>
+                          <CommandInput placeholder={`Buscar cidade em ${linha.uf}...`} />
+                          <CommandList>
+                            <CommandEmpty>
+                              Nenhuma cidade nesta UF — verifique a sigla escolhida.
+                            </CommandEmpty>
+                            <CommandGroup>
+                              {(cidadesPorUf[linha.uf.trim().toUpperCase()] ?? []).map((cidade) => {
+                                const marcado = linha.municipio === cidade.nome;
+                                return (
+                                  <CommandItem
+                                    key={cidade.codigoIbge}
+                                    value={semAcento(cidade.nome)}
+                                    onSelect={() => digitarCidadeEndereco(indice, cidade.nome)}
+                                  >
+                                    <Check
+                                      className={marcado ? "mr-2 h-4 w-4 opacity-100" : "mr-2 h-4 w-4 opacity-0"}
+                                    />
+                                    {cidade.nome}
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setEnderecos((atual) => [...atual, novaLinhaEndereco()])}
+              >
+                <Plus className="w-4 h-4 mr-1" /> Adicionar endereço
+              </Button>
+            </section>
+
+            {jaCadastrado && (
+              <div className="rounded-md border border-warning/50 bg-warning/10 p-3 text-xs">
+                Já existe um cliente com este <strong>nome e CPF/CNPJ</strong>:
+                {" "}<strong>{jaCadastrado}</strong>. Confira antes de salvar — pode ser o mesmo
+                cadastro.
+              </div>
+            )}
+
+            <DialogFooter className="flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => setDialogAberto(false)}>
                 Cancelar
               </Button>
+              {!editando && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={salvando}
+                  onClick={(evento) => salvar(evento, true)}
+                >
+                  <FileSignature className="w-4 h-4 mr-1" />
+                  Salvar e gerar contrato
+                </Button>
+              )}
               <button
                 type="submit"
                 disabled={salvando}
@@ -583,6 +1428,31 @@ export default function Clientes() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {contratosDe && (
+        <ContratosClienteDialog
+          aberto={true}
+          onAbertoChange={(aberto) => {
+            if (!aberto) setContratosDe(null);
+          }}
+          clienteId={contratosDe.id}
+          clienteNome={contratosDe.nome}
+          iniciandoComFormulario={formContratoAberto}
+          onContratoCriado={() => void carregar(busca, numeroPagina)}
+        />
+      )}
+
+      {/* Contratos COM O BANCO do cliente (correção 4) — dialog novo, client-scoped */}
+      {contratosBancoDe && (
+        <ContratosBancoClienteDialog
+          aberto={true}
+          onAbertoChange={(aberto) => {
+            if (!aberto) setContratosBancoDe(null);
+          }}
+          clienteId={contratosBancoDe.id}
+          clienteNome={contratosBancoDe.nome}
+        />
+      )}
     </div>
   );
 }

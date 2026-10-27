@@ -34,3 +34,6 @@ deploy/
 # Páginas salvas do sistema legado contendo dados reais de clientes (CPF, bancos,
 # processos) — ficam so na maquina local; o plano delas esta em docs/plano-tarefas.md.
 docs/exemplo-*.html
+
+# ---- Scripts de deploy do PC (mesma regra da API) ----
+deploy/

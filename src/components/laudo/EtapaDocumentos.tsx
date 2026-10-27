@@ -3,6 +3,7 @@ import { Upload, FileText, Trash2, Sparkles, CheckCircle, Camera, Newspaper, Ale
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { validarArquivos } from "@/lib/uploadLimits";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 
 
 interface Documento {
@@ -40,7 +41,6 @@ const fotoCategorias = ["foto_lavoura", "foto_propriedade"];
 const evidenciaCategorias = ["decreto_calamidade", "recorte_noticia"];
 
 export function EtapaDocumentos({ laudoId, documentos, onDocumentosChange, municipio, uf, cultura, safra }: Props) {
-  const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [categoriaSelecionada, setCategoriaSelecionada] = useState("contrato");
   const [iaStatus, setIaStatus] = useState<"idle" | "processing" | "done">("idle");
@@ -49,7 +49,7 @@ export function EtapaDocumentos({ laudoId, documentos, onDocumentosChange, munic
   const [buscandoDecretos, setBuscandoDecretos] = useState(false);
   const [decretosEncontrados, setDecretosEncontrados] = useState<Array<{ titulo: string; orgao: string; url: string; data: string }>>([]);
 
-  const handleFiles = useCallback(async (files: FileList) => {
+  const handleFiles = useCallback(async (files: FileList | File[]) => {
     if (!laudoId) {
       toast.error("Salve o laudo primeiro (avance pela etapa 1).");
       return;
@@ -93,12 +93,6 @@ export function EtapaDocumentos({ laudoId, documentos, onDocumentosChange, munic
     setUploading(false);
     if (newDocs.length) toast.success(`${newDocs.length} documento(s) enviado(s)`);
   }, [laudoId, categoriaSelecionada, documentos, onDocumentosChange]);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
-    if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
-  }, [handleFiles]);
 
   const removeDoc = async (doc: Documento) => {
     await supabase.storage.from("laudos").remove([doc.storage_path]);
@@ -274,50 +268,42 @@ export function EtapaDocumentos({ laudoId, documentos, onDocumentosChange, munic
           </div>
         </div>
 
-        {/* Drop zone */}
-        <div
-          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={handleDrop}
-          className={`border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer ${
-            dragging ? "border-accent bg-accent/5" : "border-border hover:border-accent/50"
-          }`}
-          onClick={() => {
-            const input = document.createElement("input");
-            input.type = "file";
-            input.multiple = true;
-            input.accept = fotoCategorias.includes(categoriaSelecionada)
+        {/* Drop zone — clique OU arrastar (OE-13) */}
+        <CaixaAnexo
+          arquivos={[]}
+          icone={false}
+          desabilitado={uploading}
+          accept={
+            fotoCategorias.includes(categoriaSelecionada)
               ? ".jpg,.jpeg,.png,.webp,.heic"
-              : ".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx";
-            input.onchange = (e) => {
-              const files = (e.target as HTMLInputElement).files;
-              if (files) handleFiles(files);
-            };
-            input.click();
-          }}
-        >
-          {fotoCategorias.includes(categoriaSelecionada) ? (
-            <Camera className={`w-10 h-10 mx-auto mb-3 ${dragging ? "text-accent" : "text-muted-foreground"}`} />
-          ) : (
-            <Upload className={`w-10 h-10 mx-auto mb-3 ${dragging ? "text-accent" : "text-muted-foreground"}`} />
-          )}
-          {uploading ? (
-            <p className="text-sm text-accent font-medium">Enviando...</p>
-          ) : (
-            <>
-              <p className="text-sm font-medium text-foreground">
-                {fotoCategorias.includes(categoriaSelecionada)
-                  ? "Arraste fotos aqui ou clique para selecionar"
-                  : "Arraste arquivos aqui ou clique para selecionar"}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {fotoCategorias.includes(categoriaSelecionada)
-                  ? "JPG, PNG, WebP — fotos serão incluídas no Laudo de Perda"
-                  : "PDF, imagens, Word, Excel — até 20 MB por arquivo"}
-              </p>
-            </>
-          )}
-        </div>
+              : ".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+          }
+          onAdicionar={(novos) => handleFiles(novos)}
+          rotulo={
+            uploading ? (
+              <p className="text-sm text-accent font-medium">Enviando...</p>
+            ) : (
+              <>
+                {fotoCategorias.includes(categoriaSelecionada) ? (
+                  <Camera className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
+                ) : (
+                  <Upload className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
+                )}
+                <p className="text-sm font-medium text-foreground">
+                  {fotoCategorias.includes(categoriaSelecionada)
+                    ? "Arraste fotos aqui ou clique para selecionar"
+                    : "Arraste arquivos aqui ou clique para selecionar"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {fotoCategorias.includes(categoriaSelecionada)
+                    ? "JPG, PNG, WebP — fotos serão incluídas no Laudo de Perda"
+                    : "PDF, imagens, Word, Excel — até 20 MB por arquivo"}
+                </p>
+              </>
+            )
+          }
+          className="p-8"
+        />
       </section>
 
       {/* Fotos da Lavoura */}

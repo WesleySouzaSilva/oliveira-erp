@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Upload, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { agrupaSugestoes, lerCsvVarredura, type SugestaoAgrupada } from "@/lib/varredura";
@@ -58,23 +59,22 @@ export default function VarreduraImport() {
         </Button>
       </div>
 
-      <div className="rounded-lg border border-dashed border-border bg-card p-6 text-center">
-        <Upload className="mx-auto mb-2 h-8 w-8 text-muted-foreground/60" />
-        <p className="text-sm text-muted-foreground">
-          Arquivo CSV com as colunas responsavel, cliente, tipo, valor, codigo, data, vezes, arquivo.
-        </p>
-        <input
-          id="csv-varredura"
-          type="file"
-          accept=".csv,text/csv"
-          className="mt-3"
-          aria-label="Arquivo da varredura"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) lerArquivo(f);
-          }}
-        />
-      </div>
+      {/* Escolher o CSV por clique OU arrastando até aqui (OE-13). */}
+      <CaixaAnexo
+        multiple={false}
+        accept=".csv,text/csv"
+        onAdicionar={(novos) => novos[0] && lerArquivo(novos[0])}
+        rotulo={
+          <>
+            <p className="text-sm font-medium text-foreground">
+              Arraste o CSV da varredura aqui ou clique para selecionar
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Arquivo CSV com as colunas responsavel, cliente, tipo, valor, codigo, data, vezes, arquivo.
+            </p>
+          </>
+        }
+      />
 
       {grupos.length > 0 && (
         <div className="mt-5 space-y-4">

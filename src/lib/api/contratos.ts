@@ -1,4 +1,5 @@
-import { apiFetch } from "@/lib/api/http";
+import { apiFetch, baixarArquivo } from "@/lib/api/http";
+import type { Pagina } from "@/lib/api/pagina";
 
 /**
  * Recursos de contrato do cliente contra a API própria (`/api/v1/...`) — módulo
@@ -23,19 +24,35 @@ export interface Contrato {
   /** Vazia = o contrato e "so registro", sem controle de prazo. */
   dataValidade?: string | null;
   observacoes?: string | null;
+  /** Valor do contrato (opcional). */
+  valor?: number | null;
+  /** `yyyy-MM-dd` — preenchida AUTATICAMENTE no cadastro (o servidor grava). */
+  dataAbertura?: string | null;
+  /** Tipo de objeto (categoria, ex.: "Arroz") — FK para /tipo-objeto. */
+  objetoId?: string | null;
   createdBy?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
 
 export interface ContratoNovo {
-  numero: string;
+  /** Opcional: ausente/vazio o servidor gera o próximo sequencial (CT-01, CT-02...). */
+  numero?: string;
   banco?: string | null;
   descricao?: string | null;
   situacao?: string | null;
   dataInicio?: string | null;
   dataValidade?: string | null;
   observacoes?: string | null;
+  valor?: number | null;
+  objetoId?: string | null;
+  /**
+   * Setores de envio (decisão 8 do plano): para cada um o servidor cria a tarefa do
+   * contrato e grava o encaminhamento — quem recebe é resolvido pela faixa de valor.
+   */
+  setores?: string[];
+  /** Dias para responder (padrão 5); a prioridade vem do prazo (até 5 = urgente). */
+  prazoDias?: number | null;
 }
 
 /** PATCH: campos ausentes nao mudam (contrato da API). */
@@ -47,6 +64,8 @@ export interface ContratoAtualizacao {
   dataInicio?: string;
   dataValidade?: string;
   observacoes?: string;
+  valor?: number;
+  objetoId?: string;
 }
 
 export interface Arquivo {
@@ -95,4 +114,85 @@ export function listarArquivos(contratoId: string): Promise<Arquivo[]> {
 
 export function excluirArquivo(id: string): Promise<void> {
   return apiFetch<void>(`/arquivos/${id}`, { method: "DELETE" });
+}
+
+/**
+ * Baixa o conteudo gravado do anexo do contrato (`GET /arquivos/{id}/conteudo`) — o banco
+ * guarda so o caminho, os bytes ficam no servidor. O `<a href>` puro nao manda o Bearer,
+ * entao o download passa pelo `baixarArquivo` (http.ts), igual ao anexo da tarefa.
+ */
+export function baixarArquivoContrato(id: string, nome: string): Promise<void> {
+  return baixarArquivo(`/arquivos/${id}/conteudo`, nome);
+}
+
+// ------------------------------------------------- lista geral (Contratos Clientes)
+
+/**
+ * Linha da lista geral de contratos (`GET /api/v1/contratos`) — o contrato resumido com
+ * os NOMES junto (cliente, objeto, quem criou), para a tabela não precisar de uma consulta
+ * por linha. Campos casam com `ContratoResumoDTO` da API.
+ *
+ * admin/ceo vê todos; quem não é admin vê só os contratos dos objetos que ele atende
+ * (escopo por `membro_objetos` — decisão 3 do plano `docs/plano-contratos-e-timeline.md`).
+ */
+export interface ContratoResumo {
+  id: string;
+  clienteId: string;
+  clienteNome?: string | null;
+  numero: string;
+  objetoId?: string | null;
+  objetoNome?: string | null;
+  valor?: number | null;
+  /** `yyyy-MM-dd`. */
+  dataAbertura?: string | null;
+  situacao: string;
+  descricao?: string | null;
+  banco?: string | null;
+  dataInicio?: string | null;
+  dataValidade?: string | null;
+  observacoes?: string | null;
+  setorId?: string | null;
+  createdBy?: string | null;
+  criadoPorNome?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** Onde a busca de texto procura — o "tipo de busca" do select da tela de contratos. */
+export type BuscaContratos = "numero" | "cliente" | "objeto" | "descricao";
+
+export interface FiltroContratos {
+  /** Numero, descricao ou nome do cliente (parcial). */
+  busca?: string;
+  /** Campo em que o texto e procurado; sem ele a API procura em numero e descricao. */
+  buscaEm?: BuscaContratos;
+  clienteId?: string;
+  objetoId?: string;
+  situacao?: string;
+  valorMin?: number;
+  valorMax?: number;
+  /** `yyyy-MM-dd` (abertura). */
+  aberturaDe?: string;
+  aberturaAte?: string;
+  page?: number;
+  size?: number;
+}
+
+/** Lista geral paginada da organização (a lista resumida da tela Contratos Clientes). */
+export function listarContratosGeral(filtro: FiltroContratos = {}): Promise<Pagina<ContratoResumo>> {
+  return apiFetch<Pagina<ContratoResumo>>("/contratos", {
+    params: {
+      busca: filtro.busca,
+      buscaEm: filtro.buscaEm,
+      clienteId: filtro.clienteId,
+      objetoId: filtro.objetoId,
+      situacao: filtro.situacao,
+      valorMin: filtro.valorMin,
+      valorMax: filtro.valorMax,
+      aberturaDe: filtro.aberturaDe,
+      aberturaAte: filtro.aberturaAte,
+      page: filtro.page ?? 0,
+      size: filtro.size ?? 50,
+    },
+  });
 }

@@ -9,9 +9,11 @@ import {
 import { listarClientes } from "@/lib/api/clientes";
 
 /**
- * Contratos com o banco (tela geral /erp/contratos-banco, correção 4): a lista vem do
- * mock da API, a busca manda os filtros `cliente`/`banco`, a exclusão chama a API e o
- * form (COMPARTILHADO com o dialog do cliente) cria com clienteId + banco + numero.
+ * Contratos com o banco (tela geral /erp/contratos-banco, correção 4 + agrupamento 26/10):
+ * a lista vem do mock da API e é AGRUPADA POR CLIENTE (nome 1x + soma), a seta do nome
+ * expande os contratos, cada contrato tem observações próprias e os botões Visualizar /
+ * Editar / Excluir, a busca manda os filtros `cliente`/`banco` e o form (COMPARTILHADO com
+ * o dialog do cliente) cria com clienteId + banco + numero.
  */
 
 vi.mock("@/lib/api/contratosBanco", () => {
@@ -32,7 +34,7 @@ vi.mock("@/lib/api/contratosBanco", () => {
   return {
     listarContratosBanco: vi.fn(async () => ({
       content: [
-        base("cb-1", "NB-001"),
+        base("cb-1", "NB-001", { observacoes: "Financiamento de trator novo." }),
         base("cb-2", "NB-002", {
           banco: "Sicoob",
           valorTotalOperacao: 120000,
@@ -48,6 +50,10 @@ vi.mock("@/lib/api/contratosBanco", () => {
     criarContratoBanco: vi.fn(async () => base("cb-9", "NB-009")),
     atualizarContratoBanco: vi.fn(async () => base("cb-1", "NB-001")),
     excluirContratoBanco: vi.fn(async () => undefined),
+    anexarArquivosBanco: vi.fn(async () => []),
+    listarArquivosBanco: vi.fn(async () => []),
+    baixarArquivoBanco: vi.fn(async () => undefined),
+    excluirArquivoBanco: vi.fn(async () => undefined),
   };
 });
 
@@ -81,6 +87,12 @@ vi.mock("@/components/ui/confirm-dialog", () => ({
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+/** Expande o grupo do cliente pela seta do NOME (aria-label "Ver contratos de ..."). */
+async function expandirCliente(nome: string) {
+  const seta = await screen.findByRole("button", { name: `Ver contratos de ${nome}` });
+  fireEvent.click(seta);
+}
+
 /** Abre o select shadcn (Radix) e escolhe a opção — pointerdown+click, como o Radix espera.
  * A opção é buscada DENTRO do listbox: o Radix também renderiza um `<select>` oculto com
  * as mesmas opções (autofill de formulário), que atrapalharia a busca por texto.
@@ -97,26 +109,60 @@ async function escolherBanco(nome: string) {
 }
 
 describe("Contratos com o banco", () => {
-  it("lista vinda do mock: cliente, banco, numero, valores e datas", async () => {
+  it("agrupa por cliente: nome UMA vez, soma do valor total e contratos sob a seta", async () => {
     render(<ContratosBanco />);
 
+    // o cliente aparece UMA única vez (linha do grupo)
+    expect(await screen.findByText("Fazenda Santa Rita")).toBeInTheDocument();
+    expect(screen.getAllByText("Fazenda Santa Rita")).toHaveLength(1);
+
+    // a soma dos valores totais (250.000 + 120.000) aparece na linha do cliente
+    expect(screen.getByText("R$ 370.000,00")).toBeInTheDocument();
+
+    // os contratos só aparecem DEPOIS da seta
+    await expandirCliente("Fazenda Santa Rita");
     expect(await screen.findByText("NB-001")).toBeInTheDocument();
     expect(screen.getByText("NB-002")).toBeInTheDocument();
-    expect(screen.getAllByText("Fazenda Santa Rita")).toHaveLength(2);
     expect(screen.getByText("Bradesco")).toBeInTheDocument();
     expect(screen.getByText("Sicoob")).toBeInTheDocument();
-    expect(screen.getByText("R$ 250.000,00")).toBeInTheDocument();
-    expect(screen.getByText("10/11/2026")).toBeInTheDocument();
-    // "2 contratos" aparece no subtítulo e no rodapé de paginação
-    expect(screen.getAllByText(/2 contratos/).length).toBeGreaterThan(0);
+
     expect(listarContratosBanco).toHaveBeenCalledWith(
       expect.objectContaining({ page: 0, size: 50 }),
     );
   });
 
+  it("cada contrato tem a seta de observações e os botões Visualizar/Editar/Excluir", async () => {
+    render(<ContratosBanco />);
+    expect(await screen.findByText("Fazenda Santa Rita")).toBeInTheDocument();
+    await expandirCliente("Fazenda Santa Rita");
+    expect(await screen.findByText("NB-001")).toBeInTheDocument();
+
+    // seta de observações do contrato NB-001
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ver observações do contrato NB-001" }),
+    );
+    expect(await screen.findByText("Financiamento de trator novo.")).toBeInTheDocument();
+
+    // ações do contrato
+    expect(screen.getAllByRole("button", { name: /Visualizar/ }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /Editar/ }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /Excluir/ }).length).toBeGreaterThan(0);
+  });
+
+  it("visualizar abre a janela somente leitura com os dados do contrato", async () => {
+    render(<ContratosBanco />);
+    expect(await screen.findByText("Fazenda Santa Rita")).toBeInTheDocument();
+    await expandirCliente("Fazenda Santa Rita");
+    expect(await screen.findByText("NB-001")).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Visualizar/ })[0]);
+    expect(await screen.findByText("Contrato com o banco")).toBeInTheDocument();
+    expect(screen.getByText("Valor total da operação")).toBeInTheDocument();
+  });
+
   it("busca por nome do cliente e por banco mandam os filtros `cliente` e `banco`", async () => {
     render(<ContratosBanco />);
-    expect(await screen.findByText("NB-001")).toBeInTheDocument();
+    expect(await screen.findByText("Fazenda Santa Rita")).toBeInTheDocument();
     vi.mocked(listarContratosBanco).mockClear();
 
     fireEvent.change(screen.getByLabelText("Buscar por nome do cliente"), {
@@ -138,6 +184,8 @@ describe("Contratos com o banco", () => {
 
   it("exclusão confirma e chama DELETE na API", async () => {
     render(<ContratosBanco />);
+    expect(await screen.findByText("Fazenda Santa Rita")).toBeInTheDocument();
+    await expandirCliente("Fazenda Santa Rita");
     expect(await screen.findByText("NB-001")).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: /Excluir/ })[0]);
@@ -147,7 +195,7 @@ describe("Contratos com o banco", () => {
 
   it("form (compartilhado) cria contrato com clienteId, banco e numero", async () => {
     render(<ContratosBanco />);
-    expect(await screen.findByText("NB-001")).toBeInTheDocument();
+    expect(await screen.findByText("Fazenda Santa Rita")).toBeInTheDocument();
 
     // 1) atalho: escolher o cliente antes de abrir o form
     fireEvent.click(screen.getByRole("button", { name: /Novo contrato/ }));

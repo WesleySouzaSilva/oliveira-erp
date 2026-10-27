@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Loader2, Paperclip, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,11 +12,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CaixaAnexo } from "@/components/ui/CaixaAnexo";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { mensagemDeErro } from "@/lib/api/http";
+import { formatarTamanho } from "@/lib/formatarTamanho";
 import { listarBancos, type Banco } from "@/lib/api/bancos";
 import {
+  anexarArquivosBanco,
   atualizarContratoBanco,
+  baixarArquivoBanco,
   criarContratoBanco,
+  excluirArquivoBanco,
+  listarArquivosBanco,
+  type ArquivoContratoBanco,
   type ContratoBanco,
   type ContratoBancoNovo,
 } from "@/lib/api/contratosBanco";
@@ -113,6 +122,44 @@ export function ContratoBancoForm({ clienteId, contrato, onSalvo, onCancelar }: 
   /** Bancos do cadastro (só ATIVOS) — a lista fixa do fonte virou `GET /bancos`. */
   const [bancos, setBancos] = useState<Banco[]>([]);
   const [carregandoBancos, setCarregandoBancos] = useState(true);
+  const confirmar = useConfirm();
+  /** Fila de anexos NOVOS escolhidos — vão para o servidor no salvar (junto do contrato). */
+  const [arquivos, setArquivos] = useState<File[]>([]);
+  /**
+   * Anexos JÁ GRAVADOS do contrato em edição (`GET /contratos-banco/{id}/arquivos`) — a
+   * edição não zera a lista: dá para baixar e excluir os que já estão lá, enquanto os
+   * novos seguem na fila `arquivos` e vão no salvar.
+   */
+  const [arquivosExistentes, setArquivosExistentes] = useState<ArquivoContratoBanco[]>([]);
+  const [carregandoAnexos, setCarregandoAnexos] = useState(false);
+
+  // Em edição, os anexos já gravados entram na lista em vez de zerar tudo — mesmo jeito
+  // do contrato do escritório. Form NOVO não busca nada (ainda não existe id).
+  useEffect(() => {
+    if (!contrato?.id) {
+      setArquivosExistentes([]);
+      return;
+    }
+    let vivo = true;
+    setCarregandoAnexos(true);
+    setArquivosExistentes([]);
+    listarArquivosBanco(contrato.id)
+      .then((lista) => {
+        if (vivo) setArquivosExistentes(lista);
+      })
+      .catch((erro) => {
+        if (vivo) {
+          setArquivosExistentes([]);
+          toast.error(mensagemDeErro(erro));
+        }
+      })
+      .finally(() => {
+        if (vivo) setCarregandoAnexos(false);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [contrato?.id]);
 
   useEffect(() => {
     let vivo = true;
@@ -183,11 +230,43 @@ export function ContratoBancoForm({ clienteId, contrato, onSalvo, onCancelar }: 
         ? await atualizarContratoBanco(contrato.id, dados)
         : await criarContratoBanco(dados);
       toast.success(contrato ? "Contrato com o banco atualizado." : "Contrato com o banco criado.");
+      // Anexos escolhidos junto da observação: vão DEPOIS que o contrato existe
+      // (o upload precisa do id — POST /contratos-banco/{id}/arquivos).
+      if (arquivos.length > 0) {
+        try {
+          await anexarArquivosBanco(salvo.id, arquivos);
+          toast.success(`${arquivos.length} documento(s) anexado(s) ao contrato.`);
+        } catch (erroAnexo) {
+          // O contrato já foi salvo; só o anexo falhou — avisa para anexar de novo pelo Editar.
+          toast.error(
+            `${mensagemDeErro(erroAnexo)} — o contrato foi salvo, mas os documentos não foram anexados.`,
+          );
+        }
+      }
+      setArquivos([]);
       onSalvo?.(salvo);
     } catch (erro) {
       toast.error(mensagemDeErro(erro));
     } finally {
       setSalvando(false);
+    }
+  };
+
+  /** Exclui um anexo JÁ GRAVADO do contrato em edição (exclusão imediata na API). */
+  const excluirAnexoExistente = async (arquivo: ArquivoContratoBanco) => {
+    const confirmado = await confirmar({
+      title: `Excluir o anexo ${arquivo.nomeOriginal}?`,
+      description: "O arquivo sai do contrato e não pode ser recuperado.",
+      confirmText: "Excluir",
+      destructive: true,
+    });
+    if (!confirmado) return;
+    try {
+      await excluirArquivoBanco(arquivo.id);
+      setArquivosExistentes((atual) => atual.filter((item) => item.id !== arquivo.id));
+      toast.success("Anexo excluído.");
+    } catch (erro) {
+      toast.error(mensagemDeErro(erro));
     }
   };
 
@@ -288,6 +367,72 @@ export function ContratoBancoForm({ clienteId, contrato, onSalvo, onCancelar }: 
             placeholder="Anotações sobre a operação (opcional)"
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
+          {/* Anexos junto da observação (26/10/2026) — mesmo jeito do contrato do
+              escritório: escolhe os arquivos (clique ou arrastar) e vão no salvar. */}
+          <div className="space-y-1 pt-1.5">
+            <p className="block text-[11px] text-muted-foreground">
+              Anexar documentos — fotos, PDFs, planilhas etc. (os arquivos vão junto do
+              contrato no salvar)
+            </p>
+            <CaixaAnexo
+              arquivos={arquivos}
+              onAdicionar={(novos) => setArquivos((atual) => [...atual, ...novos])}
+              onRemover={(indice) =>
+                setArquivos((atual) => atual.filter((_, posicao) => posicao !== indice))
+              }
+            />
+          </div>
+          {/* Anexos JÁ GRAVADOS (só na edição): baixam e excluem os que já estão no
+              contrato; a fila de cima continua sendo só dos novos. */}
+          {contrato && (
+            <div className="space-y-1 pt-1.5">
+              <p className="block text-[11px] text-muted-foreground">
+                Anexos já vinculados ao contrato
+              </p>
+              {carregandoAnexos ? (
+                <p className="text-[11px] text-muted-foreground flex items-center gap-2">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Carregando anexos...
+                </p>
+              ) : arquivosExistentes.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground">Nenhum anexo gravado.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {arquivosExistentes.map((arquivo) => (
+                    <li
+                      key={arquivo.id}
+                      className="flex items-center justify-between gap-2 rounded-md bg-secondary/60 px-2 py-1 text-xs"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          baixarArquivoBanco(arquivo.id, arquivo.nomeOriginal).catch((erro) =>
+                            toast.error(mensagemDeErro(erro)),
+                          )
+                        }
+                        className="truncate inline-flex items-center gap-1.5 text-accent hover:underline"
+                      >
+                        <Paperclip className="w-3 h-3 shrink-0" />
+                        {arquivo.nomeOriginal}
+                        {arquivo.tamanhoBytes ? (
+                          <span className="text-muted-foreground">
+                            ({formatarTamanho(arquivo.tamanhoBytes)})
+                          </span>
+                        ) : null}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Excluir ${arquivo.nomeOriginal}`}
+                        onClick={() => void excluirAnexoExistente(arquivo)}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
       </div>
       <DialogFooter>

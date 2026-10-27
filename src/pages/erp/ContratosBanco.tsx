@@ -1,6 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Landmark, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  Landmark,
+  Pencil,
+  Plus,
+  Search,
+  StickyNote,
+  Trash2,
+} from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -11,7 +21,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -35,14 +44,17 @@ import { ContratoBancoForm } from "@/components/erp/ContratoBancoForm";
 import type { Pagina } from "@/lib/api/pagina";
 
 /**
- * Contratos com o banco — lista geral (menu Clientes → Contratos), correção 4 de
- * `docs/plano-correcoes-comercial-contratos-tarefas.md`.
+ * Contratos com o banco — lista geral (menu Comercial → Contratos Cliente), correção 4 de
+ * `docs/plano-correcoes-comercial-contratos-tarefas.md` + correção do titular (26/10/2026).
  *
  * Espelho do fonte antigo: operações de crédito/financiamento dos clientes junto aos
- * bancos. Busca por NOME DO CLIENTE (`cliente`) e por BANCO (`banco`), ambos com
- * debounce; o form é POR CLIENTE (o `clienteId` vem da busca ou da linha), por isso o
- * atalho "Novo contrato" primeiro pergunta qual é o cliente — mesmo caminho da tela
- * de contratos do escritório.
+ * bancos. Busca por NOME DO CLIENTE (`cliente`) e por BANCO (`banco`), ambos com debounce.
+ *
+ * Correção 26/10/2026 (titular): a lista passa a ser AGRUPADA POR CLIENTE — o nome aparece
+ * UMA vez com a SOMA dos `valorTotalOperacao` dos contratos dele; a seta do nome expande e
+ * mostra os contratos, cada um com suas próprias ações (Visualizar, Editar, Excluir) e com
+ * a seta de observações embaixo (mesmo padrão de "olhar dentro" da tela de Contratos do
+ * escritório). O form continua POR CLIENTE (`clienteId` vem da busca ou da linha).
  */
 
 const dataBr = (iso: string | null | undefined): string =>
@@ -53,6 +65,42 @@ const moeda = (valor: number | null | undefined): string =>
     ? "—"
     : valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+/** Um cliente da lista agrupada: nome único + a soma do valor total das operações dele. */
+interface GrupoCliente {
+  clienteId: string;
+  clienteNome: string;
+  contratos: ContratoBanco[];
+  /** Soma do `valorTotalOperacao` dos contratos DESTA página. */
+  somaValor: number;
+}
+
+/**
+ * Agrupa os contratos da página por cliente (o servidor pagina por CONTRATO, então o
+ * agrupamento vale para os contratos carregados). Nome vazio cai em "—" e ainda assim
+ * forma grupo — nada some da tela.
+ */
+function agruparPorCliente(contratos: ContratoBanco[]): GrupoCliente[] {
+  const mapa = new Map<string, GrupoCliente>();
+  for (const contrato of contratos) {
+    const chave = contrato.clienteId || contrato.clienteNome || "—";
+    let grupo = mapa.get(chave);
+    if (!grupo) {
+      grupo = {
+        clienteId: contrato.clienteId || chave,
+        clienteNome: contrato.clienteNome || "—",
+        contratos: [],
+        somaValor: 0,
+      };
+      mapa.set(chave, grupo);
+    }
+    grupo.contratos.push(contrato);
+    grupo.somaValor += contrato.valorTotalOperacao ?? 0;
+  }
+  return [...mapa.values()].sort((a, b) =>
+    a.clienteNome.localeCompare(b.clienteNome, "pt-BR"),
+  );
+}
+
 export default function ContratosBanco() {
   const confirmar = useConfirm();
   const [pagina, setPagina] = useState<Pagina<ContratoBanco> | null>(null);
@@ -60,6 +108,12 @@ export default function ContratosBanco() {
   const [buscaBanco, setBuscaBanco] = useState("");
   const [carregando, setCarregando] = useState(true);
   const [numeroPagina, setNumeroPagina] = useState(0);
+  /** Clientes com os contratos expandidos (a seta do NOME do cliente). */
+  const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
+  /** Contratos com as observações abertas (a seta embaixo, por contrato). */
+  const [observacoesAbertas, setObservacoesAbertas] = useState<Set<string>>(new Set());
+  /** Janela de visualização (somente leitura) de um contrato. */
+  const [visualizando, setVisualizando] = useState<ContratoBanco | null>(null);
   /** Atalho "Novo contrato": 1) escolher o cliente; 2) abrir o form já vinculado. */
   const [buscandoCliente, setBuscandoCliente] = useState(false);
   const [clienteNovo, setClienteNovo] = useState<ClienteEscolhido | null>(null);
@@ -83,6 +137,9 @@ export default function ContratosBanco() {
         });
         setPagina(resultado);
         setNumeroPagina(resultado.page.number);
+        // Lista nova → recolhe tudo (os grupos são outros).
+        setExpandidos(new Set());
+        setObservacoesAbertas(new Set());
       } catch (erro) {
         if (erro instanceof ErroApi && erro.status === 401) return; // o guard do layout cuida
         if (erro instanceof ErroApi && erro.status === 403) {
@@ -128,6 +185,24 @@ export default function ContratosBanco() {
   const ultimo = pagina?.page.last ?? true;
   const filtrando = Boolean(buscaCliente.trim() || buscaBanco.trim());
 
+  const grupos = useMemo(() => agruparPorCliente(contratos), [contratos]);
+
+  const alternarCliente = (clienteId: string) =>
+    setExpandidos((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(clienteId)) novo.delete(clienteId);
+      else novo.add(clienteId);
+      return novo;
+    });
+
+  const alternarObservacoes = (contratoId: string) =>
+    setObservacoesAbertas((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(contratoId)) novo.delete(contratoId);
+      else novo.add(contratoId);
+      return novo;
+    });
+
   const excluir = async (contrato: ContratoBanco) => {
     const confirmado = await confirmar({
       title: `Excluir o contrato ${contrato.numeroContrato || contrato.banco}?`,
@@ -156,7 +231,7 @@ export default function ContratosBanco() {
         title="Contratos Cliente"
         subtitle={`${total} contrato${total === 1 ? "" : "s"}${
           filtrando ? " (com filtro)" : ""
-        } — contratos dos clientes COM OS BANCOS`}
+        } em ${grupos.length} cliente${grupos.length === 1 ? "" : "s"} — contratos dos clientes COM OS BANCOS`}
         breadcrumb={[{ label: "Comercial" }, { label: "Contratos Cliente" }]}
         actions={
           <Button
@@ -256,58 +331,185 @@ export default function ContratosBanco() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-8">
+                      <span className="sr-only">Contratos do cliente</span>
+                    </TableHead>
                     <TableHead>Cliente</TableHead>
-                    <TableHead>Banco</TableHead>
-                    <TableHead>Nº do contrato</TableHead>
-                    <TableHead>Valor total</TableHead>
-                    <TableHead>Parcela</TableHead>
-                    <TableHead>1º venc.</TableHead>
-                    <TableHead>Próx. venc.</TableHead>
-                    <TableHead>Últ. venc.</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
+                    <TableHead className="text-center">Contratos</TableHead>
+                    <TableHead className="text-right">Valor total (soma)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {contratos.map((contrato) => (
-                    <TableRow key={contrato.id}>
-                      <TableCell className="max-w-[16rem]">
-                        <span className="block truncate font-medium" title={contrato.clienteNome ?? ""}>
-                          {contrato.clienteNome || "—"}
-                        </span>
-                      </TableCell>
-                      <TableCell>{contrato.banco}</TableCell>
-                      <TableCell>{contrato.numeroContrato || "—"}</TableCell>
-                      <TableCell>{moeda(contrato.valorTotalOperacao)}</TableCell>
-                      <TableCell>{moeda(contrato.valorParcela)}</TableCell>
-                      <TableCell className="whitespace-nowrap">{dataBr(contrato.primeiroVencimento)}</TableCell>
-                      <TableCell className="whitespace-nowrap">{dataBr(contrato.vencimentoProximaParcela)}</TableCell>
-                      <TableCell className="whitespace-nowrap">{dataBr(contrato.vencimentoUltimaParcela)}</TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setEditando(contrato)}
-                        >
-                          <Pencil className="w-4 h-4 mr-1" /> Editar
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => excluir(contrato)}
-                        >
-                          <Trash2 className="w-4 h-4 mr-1" /> Excluir
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {grupos.map((grupo) => {
+                    const aberto = expandidos.has(grupo.clienteId);
+                    return (
+                      <Fragment key={grupo.clienteId}>
+                        <TableRow>
+                          <TableCell className="px-2">
+                            <button
+                              type="button"
+                              onClick={() => alternarCliente(grupo.clienteId)}
+                              aria-expanded={aberto}
+                              aria-controls={`contratos-banco-cliente-${grupo.clienteId}`}
+                              aria-label={
+                                aberto
+                                  ? `Recolher contratos de ${grupo.clienteNome}`
+                                  : `Ver contratos de ${grupo.clienteNome}`
+                              }
+                              title={aberto ? "Recolher contratos" : "Ver contratos"}
+                              className="w-7 h-7 inline-flex items-center justify-center rounded-md hover:bg-secondary transition-colors"
+                            >
+                              {aberto ? (
+                                <ChevronDown className="w-4 h-4 text-accent" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 text-accent" />
+                              )}
+                            </button>
+                          </TableCell>
+                          <TableCell className="max-w-[18rem] font-medium">
+                            <span className="block truncate" title={grupo.clienteNome}>
+                              {grupo.clienteNome}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {grupo.contratos.length}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {moeda(grupo.somaValor)}
+                          </TableCell>
+                        </TableRow>
+
+                        {aberto && (
+                          <TableRow className="hover:bg-transparent">
+                            <TableCell colSpan={4} className="bg-muted/30 px-4 py-3">
+                              <div
+                                id={`contratos-banco-cliente-${grupo.clienteId}`}
+                                className="overflow-x-auto rounded-lg border border-border"
+                              >
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead className="w-8">
+                                        <span className="sr-only">Observações</span>
+                                      </TableHead>
+                                      <TableHead>Banco</TableHead>
+                                      <TableHead>Nº do contrato</TableHead>
+                                      <TableHead>Valor total</TableHead>
+                                      <TableHead>Parcela</TableHead>
+                                      <TableHead>1º venc.</TableHead>
+                                      <TableHead>Próx. venc.</TableHead>
+                                      <TableHead>Últ. venc.</TableHead>
+                                      <TableHead className="text-right">Ações</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {grupo.contratos.map((contrato) => {
+                                      const obsAberta = observacoesAbertas.has(contrato.id);
+                                      return (
+                                        <Fragment key={contrato.id}>
+                                          <TableRow>
+                                            <TableCell className="px-2">
+                                              <button
+                                                type="button"
+                                                onClick={() => alternarObservacoes(contrato.id)}
+                                                aria-expanded={obsAberta}
+                                                aria-controls={`contratos-banco-obs-${contrato.id}`}
+                                                aria-label={
+                                                  obsAberta
+                                                    ? `Recolher observações do contrato ${contrato.numeroContrato || contrato.banco}`
+                                                    : `Ver observações do contrato ${contrato.numeroContrato || contrato.banco}`
+                                                }
+                                                title={obsAberta ? "Recolher observações" : "Ver observações"}
+                                                className="w-7 h-7 inline-flex items-center justify-center rounded-md hover:bg-secondary transition-colors"
+                                              >
+                                                {obsAberta ? (
+                                                  <ChevronDown className="w-4 h-4 text-accent" />
+                                                ) : (
+                                                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                                                )}
+                                              </button>
+                                            </TableCell>
+                                            <TableCell>{contrato.banco}</TableCell>
+                                            <TableCell>{contrato.numeroContrato || "—"}</TableCell>
+                                            <TableCell>{moeda(contrato.valorTotalOperacao)}</TableCell>
+                                            <TableCell>{moeda(contrato.valorParcela)}</TableCell>
+                                            <TableCell className="whitespace-nowrap">
+                                              {dataBr(contrato.primeiroVencimento)}
+                                            </TableCell>
+                                            <TableCell className="whitespace-nowrap">
+                                              {dataBr(contrato.vencimentoProximaParcela)}
+                                            </TableCell>
+                                            <TableCell className="whitespace-nowrap">
+                                              {dataBr(contrato.vencimentoUltimaParcela)}
+                                            </TableCell>
+                                            <TableCell className="text-right whitespace-nowrap">
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={() => setVisualizando(contrato)}
+                                              >
+                                                <Eye className="w-4 h-4 mr-1" /> Visualizar
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={() => setEditando(contrato)}
+                                              >
+                                                <Pencil className="w-4 h-4 mr-1" /> Editar
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="text-destructive hover:text-destructive"
+                                                onClick={() => excluir(contrato)}
+                                              >
+                                                <Trash2 className="w-4 h-4 mr-1" /> Excluir
+                                              </Button>
+                                            </TableCell>
+                                          </TableRow>
+
+                                          {obsAberta && (
+                                            <TableRow className="hover:bg-transparent">
+                                              <TableCell
+                                                colSpan={9}
+                                                className="bg-background/50 px-4 py-3"
+                                              >
+                                                <p
+                                                  id={`contratos-banco-obs-${contrato.id}`}
+                                                  className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1"
+                                                >
+                                                  <StickyNote className="w-3.5 h-3.5" /> Observações
+                                                </p>
+                                                <p className="mt-1 text-sm text-foreground whitespace-pre-wrap">
+                                                  {contrato.observacoes?.trim() || (
+                                                    <span className="text-muted-foreground">
+                                                      Sem observações.
+                                                    </span>
+                                                  )}
+                                                </p>
+                                              </TableCell>
+                                            </TableRow>
+                                          )}
+                                        </Fragment>
+                                      );
+                                    })}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
 
             <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-muted-foreground">
               <span>
-                {total} contrato{total === 1 ? "" : "s"} · página {numeroPagina + 1} de{" "}
+                {total} contrato{total === 1 ? "" : "s"} · {grupos.length} cliente
+                {grupos.length === 1 ? "" : "s"} · página {numeroPagina + 1} de{" "}
                 {pagina?.page.totalPages || 1}
               </span>
               <div className="flex gap-2">
@@ -332,6 +534,62 @@ export default function ContratosBanco() {
           </Card>
         ))}
 
+      {/* Visualizar (somente leitura): todos os campos do contrato com o banco. */}
+      <Dialog open={!!visualizando} onOpenChange={(aberto) => !aberto && setVisualizando(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Contrato com o banco</DialogTitle>
+            <DialogDescription>
+              {visualizando?.clienteNome} — {visualizando?.banco}
+            </DialogDescription>
+          </DialogHeader>
+          {visualizando && (
+            <div className="space-y-3">
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <div>
+                  <dt className="text-xs text-muted-foreground">Banco</dt>
+                  <dd>{visualizando.banco}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Nº do contrato</dt>
+                  <dd>{visualizando.numeroContrato || "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Valor total da operação</dt>
+                  <dd>{moeda(visualizando.valorTotalOperacao)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Valor da parcela</dt>
+                  <dd>{moeda(visualizando.valorParcela)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">1º vencimento</dt>
+                  <dd>{dataBr(visualizando.primeiroVencimento)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Próximo vencimento</dt>
+                  <dd>{dataBr(visualizando.vencimentoProximaParcela)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Último vencimento</dt>
+                  <dd>{dataBr(visualizando.vencimentoUltimaParcela)}</dd>
+                </div>
+              </dl>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+                  <StickyNote className="w-3.5 h-3.5" /> Observações
+                </p>
+                <p className="mt-1 text-sm text-foreground whitespace-pre-wrap">
+                  {visualizando.observacoes?.trim() || (
+                    <span className="text-muted-foreground">Sem observações.</span>
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Atalho "Novo contrato": 1) escolher o cliente; 2) abrir o form já vinculado. */}
       <Dialog open={buscandoCliente} onOpenChange={setBuscandoCliente}>
         <DialogContent className="max-w-lg">
@@ -347,7 +605,7 @@ export default function ContratosBanco() {
             id="novo-contrato-banco-cliente"
             onChange={setClienteNovo}
           />
-          <DialogFooter>
+          <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setBuscandoCliente(false)}>
               Cancelar
             </Button>
@@ -360,7 +618,7 @@ export default function ContratosBanco() {
             >
               Abrir formulário
             </Button>
-          </DialogFooter>
+          </div>
           {!clienteNovo?.id && clienteNovo && (
             <p className="text-[11px] text-muted-foreground -mt-1">
               Escolha um cliente da lista (o nome digitado sem escolher não abre o formulário).

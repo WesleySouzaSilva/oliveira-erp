@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api/http";
+import { apiFetch, baixarArquivo } from "@/lib/api/http";
 import type { Pagina } from "@/lib/api/pagina";
 
 /**
@@ -90,4 +90,49 @@ export function atualizarContratoBanco(id: string, dados: ContratoBancoNovo): Pr
 /** Exclui o contrato com o banco (204). */
 export function excluirContratoBanco(id: string): Promise<void> {
   return apiFetch<void>(`/contratos-banco/${id}`, { method: "DELETE" });
+}
+
+// ------------------------------------------------------------- anexos do contrato
+
+/** Um arquivo anexado a um contrato com o banco (mesmo DTO `ArquivoClienteDTO` da API). */
+export interface ArquivoContratoBanco {
+  id: string;
+  contratoBancoId?: string | null;
+  nomeOriginal: string;
+  arquivoPath: string;
+  mimeTipo?: string | null;
+  tamanhoBytes?: number | null;
+  createdAt?: string;
+}
+
+/** Anexa 1..N arquivos ao contrato com o banco (multipart, campo `arquivos`). */
+export function anexarArquivosBanco(
+  contratoId: string,
+  arquivos: File[],
+): Promise<ArquivoContratoBanco[]> {
+  const dados = new FormData();
+  arquivos.forEach((arquivo) => dados.append("arquivos", arquivo));
+  return apiFetch<ArquivoContratoBanco[]>(`/contratos-banco/${contratoId}/arquivos`, {
+    method: "POST",
+    body: dados,
+  });
+}
+
+/** Arquivos já anexados ao contrato com o banco (form de edição). */
+export function listarArquivosBanco(contratoId: string): Promise<ArquivoContratoBanco[]> {
+  return apiFetch<ArquivoContratoBanco[]>(`/contratos-banco/${contratoId}/arquivos`);
+}
+
+/**
+ * Baixa o conteúdo de um anexo (`GET /arquivos/{id}/conteudo`) — endpoint genérico da API,
+ * igual ao do contrato do escritório; o `<a href>` puro não manda o Bearer, então passa
+ * pelo `baixarArquivo`.
+ */
+export function baixarArquivoBanco(id: string, nome: string): Promise<void> {
+  return baixarArquivo(`/arquivos/${id}/conteudo`, nome);
+}
+
+/** Exclui um anexo já gravado (`DELETE /arquivos/{id}` — genérico, validado por organização). */
+export function excluirArquivoBanco(id: string): Promise<void> {
+  return apiFetch<void>(`/arquivos/${id}`, { method: "DELETE" });
 }

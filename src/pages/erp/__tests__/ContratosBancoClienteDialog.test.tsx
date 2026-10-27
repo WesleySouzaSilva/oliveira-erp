@@ -38,6 +38,10 @@ vi.mock("@/lib/api/contratosBanco", () => {
     criarContratoBanco: vi.fn(async () => base("cb-9", "NB-009")),
     atualizarContratoBanco: vi.fn(async () => base("cb-1", "NB-001")),
     excluirContratoBanco: vi.fn(async () => undefined),
+    anexarArquivosBanco: vi.fn(async () => []),
+    listarArquivosBanco: vi.fn(async () => []),
+    baixarArquivoBanco: vi.fn(async () => undefined),
+    excluirArquivoBanco: vi.fn(async () => undefined),
   };
 });
 
